@@ -179,10 +179,11 @@
 
 <script>
 const WINDOWS = [
-  { label: "Hinweg",  mode: "Velo",    hours: [7, 8],   time: "7:30–8:00" },
-  { label: "Mittag",  mode: "zu Fuss", hours: [12],     time: "12:00–13:00" },
-  { label: "Rückweg", mode: "Velo",    hours: [17, 18], time: "17:30–18:00" }
+  { label: "Hinweg",  mode: "Velo",    hours: [7, 8], time: "7:30–8:00",   from: 7.5,  to: 8 },
+  { label: "Mittag",  mode: "zu Fuss", hours: [12],   time: "12:00–13:00", from: 12,   to: 13 },
+  { label: "Rückweg", mode: "Velo",    hours: [17],   time: "17:00–17:30", from: 17,   to: 17.5 }
 ];
+const THUNDER_CODES = [95, 96, 99];
 const FALLBACK = { lat: 47.5596, lon: 7.5886, name: "Basel (Standard)" };
 
 function getPosition() {
@@ -200,7 +201,7 @@ async function loadWeather(pos) {
   const url = "https://api.open-meteo.com/v1/forecast"
     + "?latitude=" + pos.lat.toFixed(4)
     + "&longitude=" + pos.lon.toFixed(4)
-    + "&hourly=apparent_temperature,precipitation_probability,precipitation"
+    + "&hourly=apparent_temperature,precipitation_probability,precipitation,weather_code"
     + "&forecast_days=2&timezone=auto";
   const res = await fetch(url);
   if (!res.ok) throw new Error("API " + res.status);
@@ -220,10 +221,12 @@ function renderWindows(h, nowHour) {
     const prob = Math.max(...w.hours.map(i => h.precipitation_probability[i] ?? 0));
     const mm = w.hours.reduce((a, i) => a + (h.precipitation[i] ?? 0), 0);
     const past = nowHour > Math.max(...w.hours);
-    const wet = prob >= 30 || mm >= 0.2;
-    const rainText = wet
+    const thunder = w.hours.some(i => THUNDER_CODES.includes(h.weather_code[i]));
+    const wet = prob >= 30 || mm >= 0.2 || thunder;
+    let rainText = wet
       ? "Regen " + prob + " % · " + fmt(mm, 1) + " mm"
       : "trocken (" + prob + " %)";
+    if (thunder) rainText += " · Gewitter möglich";
     const el = document.createElement("div");
     el.className = "win fade" + (past ? " past" : "");
     el.innerHTML =
@@ -249,9 +252,9 @@ function renderChart(h, nowHour) {
 
   let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Tagesverlauf gefühlte Temperatur und Regen">';
 
-  // Fenster-Zonen
+  // Fenster-Zonen (echte Zeitfenster, nicht die Datenstunden)
   WINDOWS.forEach(w => {
-    const x0 = x(Math.min(...w.hours)), x1 = x(Math.max(...w.hours) + 1);
+    const x0 = x(w.from), x1 = x(w.to);
     s += '<rect x="' + x0 + '" y="' + padT + '" width="' + (x1 - x0) + '" height="' + (H - padT - padB) + '" fill="#17242F" opacity="0.06" rx="4"/>';
     s += '<text x="' + ((x0 + x1) / 2) + '" y="' + (padT - 4) + '" text-anchor="middle" font-size="9" fill="#5C6B78">' + w.label + '</text>';
   });
@@ -293,7 +296,8 @@ function sliceDay(h, day) {
   return {
     apparent_temperature: h.apparent_temperature.slice(from, to),
     precipitation_probability: h.precipitation_probability.slice(from, to),
-    precipitation: h.precipitation.slice(from, to)
+    precipitation: h.precipitation.slice(from, to),
+    weather_code: h.weather_code.slice(from, to)
   };
 }
 
