@@ -19,7 +19,7 @@ Bewusst keine allgemeine Wetter-App. Bestehende Apps zeigen zu viel oder das Fal
 - Vergangene Zeitfenster werden ausgegraut, nicht ausgeblendet
 - Regenzeile wird ab 30 % Wahrscheinlichkeit oder 0.2 mm hervorgehoben, sonst "trocken"
 - Gewitter: Open-Meteo liefert keine Gewitterwahrscheinlichkeit; stattdessen Flag "Gewitter möglich" via `weather_code` 95/96/99 in den Fensterstunden (hebt die Regenzeile mit hervor)
-- Wetter-Symbol pro Fenster (Emoji aus `weather_code`, schlechteste Fensterstunde zählt)
+- Wetter-Symbol pro Fenster (Emoji aus `weather_code`, schlechteste Fensterstunde zählt); gefrierender Regen/Niesel (56/57/66/67) als 🧊 "Eisglätte"
 - Chart-Zonen zeigen die echten Zeitfenster (`from`/`to`), nicht die einfliessenden Datenstunden
 - Temperatur pro Fenster: Mittelwert der Fensterstunden (offen: evtl. Minimum, wird im Gebrauch entschieden)
 

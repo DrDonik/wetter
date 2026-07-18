@@ -198,6 +198,7 @@ function weatherSymbol(code) {
   if (code >= 85) return ["🌨️", "Schneeschauer"];
   if (code >= 80) return ["🌦️", "Regenschauer"];
   if (code >= 71) return ["🌨️", "Schnee"];
+  if ([56, 57, 66, 67].includes(code)) return ["🧊", "Eisglätte"];
   if (code >= 61) return ["🌧️", "Regen"];
   if (code >= 51) return ["🌦️", "Nieselregen"];
   if (code >= 45) return ["🌫️", "Nebel"];
