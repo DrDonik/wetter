@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Anziehen</title>
+<style>
+  :root {
+    --bg: #EDF1F5;
+    --card: #FFFFFF;
+    --ink: #17242F;
+    --muted: #5C6B78;
+    --line: #D8E0E7;
+    --warm: #D9662E;
+    --rain: #2563C4;
+    --rain-soft: #DCE9FB;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif;
+    padding: 20px 16px 32px;
+    max-width: 460px;
+    margin: 0 auto;
+    font-size: 16px;
+    line-height: 1.4;
+  }
+  header { margin-bottom: 18px; }
+  h1 {
+    font-size: 1.45rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .sub {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-top: 2px;
+  }
+  .windows { display: flex; flex-direction: column; gap: 10px; }
+  .win {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 14px 16px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    column-gap: 12px;
+    align-items: baseline;
+  }
+  .win.past { opacity: 0.42; }
+  .win .label { font-weight: 600; font-size: 0.95rem; }
+  .win .time { color: var(--muted); font-size: 0.8rem; margin-left: 6px; font-weight: 400; }
+  .win .mode {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 1px 8px;
+    margin-left: 8px;
+    vertical-align: 1px;
+  }
+  .win .temp {
+    grid-row: 1 / 3;
+    grid-column: 2;
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--warm);
+    font-variant-numeric: tabular-nums;
+    align-self: center;
+  }
+  .win .temp small { font-size: 1rem; font-weight: 600; }
+  .win .rain {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .win .rain.wet { color: var(--rain); font-weight: 600; }
+  .chart-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 14px 12px 8px;
+    margin-top: 14px;
+  }
+  .chart-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+    padding-left: 4px;
+  }
+  .legend {
+    display: flex;
+    gap: 14px;
+    font-size: 0.75rem;
+    color: var(--muted);
+    padding: 6px 4px 4px;
+  }
+  .legend span::before {
+    content: "";
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 3px;
+    margin-right: 5px;
+    vertical-align: -1px;
+  }
+  .legend .l-temp::before { background: var(--warm); }
+  .legend .l-rain::before { background: var(--rain); }
+  svg { display: block; width: 100%; height: auto; }
+  footer {
+    margin-top: 16px;
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-align: center;
+  }
+  #status { padding: 40px 0; text-align: center; color: var(--muted); }
+  @media (prefers-reduced-motion: no-preference) {
+    .fade { animation: in 0.35s ease both; }
+    @keyframes in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Anziehen</h1>
+  <div class="sub" id="loc">Standort wird ermittelt …</div>
+</header>
+
+<div id="status">Lade Wetterdaten …</div>
+<main id="app" hidden>
+  <div class="windows" id="windows"></div>
+  <div class="chart-card fade">
+    <div class="chart-title">Tagesverlauf</div>
+    <div id="chart"></div>
+    <div class="legend">
+      <span class="l-temp">gefühlt °C</span>
+      <span class="l-rain">Regen mm/h</span>
+    </div>
+  </div>
+  <footer id="foot"></footer>
+</main>
+
+<script>
+const WINDOWS = [
+  { label: "Hinweg",  mode: "Velo",    hours: [7, 8],   time: "7:30–8:00" },
+  { label: "Mittag",  mode: "zu Fuss", hours: [12],     time: "12:00–13:00" },
+  { label: "Rückweg", mode: "Velo",    hours: [17, 18], time: "17:30–18:00" }
+];
+const FALLBACK = { lat: 47.5596, lon: 7.5886, name: "Basel (Standard)" };
+
+function getPosition() {
+  return new Promise(resolve => {
+    if (!navigator.geolocation) return resolve(FALLBACK);
+    navigator.geolocation.getCurrentPosition(
+      p => resolve({ lat: p.coords.latitude, lon: p.coords.longitude, name: "Dein Standort" }),
+      () => resolve(FALLBACK),
+      { timeout: 6000, maximumAge: 600000 }
+    );
+  });
+}
+
+async function loadWeather(pos) {
+  const url = "https://api.open-meteo.com/v1/forecast"
+    + "?latitude=" + pos.lat.toFixed(4)
+    + "&longitude=" + pos.lon.toFixed(4)
+    + "&hourly=apparent_temperature,precipitation_probability,precipitation"
+    + "&forecast_days=1&timezone=auto";
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("API " + res.status);
+  return res.json();
+}
+
+function fmt(n, digits = 0) {
+  return n.toLocaleString("de-CH", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+function renderWindows(h, nowHour) {
+  const box = document.getElementById("windows");
+  WINDOWS.forEach(w => {
+    const temps = w.hours.map(i => h.apparent_temperature[i]);
+    const temp = temps.reduce((a, b) => a + b, 0) / temps.length;
+    const prob = Math.max(...w.hours.map(i => h.precipitation_probability[i] ?? 0));
+    const mm = w.hours.reduce((a, i) => a + (h.precipitation[i] ?? 0), 0);
+    const past = nowHour > Math.max(...w.hours);
+    const wet = prob >= 30 || mm >= 0.2;
+    const rainText = wet
+      ? "Regen " + prob + " % · " + fmt(mm, 1) + " mm"
+      : "trocken (" + prob + " %)";
+    const el = document.createElement("div");
+    el.className = "win fade" + (past ? " past" : "");
+    el.innerHTML =
+      '<div><span class="label">' + w.label + '</span>' +
+      '<span class="time">' + w.time + '</span>' +
+      '<span class="mode">' + w.mode + '</span></div>' +
+      '<div class="temp">' + fmt(temp) + '<small>°</small></div>' +
+      '<div class="rain' + (wet ? " wet" : "") + '">' + (past ? "vorbei · " : "") + rainText + '</div>';
+    box.appendChild(el);
+  });
+}
+
+function renderChart(h, nowHour) {
+  const W = 420, H = 150, padL = 30, padR = 8, padT = 14, padB = 22;
+  const temps = h.apparent_temperature.slice(0, 24);
+  const rain = h.precipitation.slice(0, 24).map(v => v ?? 0);
+  const tMin = Math.floor(Math.min(...temps) - 1);
+  const tMax = Math.ceil(Math.max(...temps) + 1);
+  const rMax = Math.max(1.5, ...rain);
+  const x = i => padL + (i / 23) * (W - padL - padR);
+  const yT = v => padT + (1 - (v - tMin) / (tMax - tMin)) * (H - padT - padB);
+  const yR = v => H - padB - (v / rMax) * (H - padT - padB) * 0.55;
+
+  let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Tagesverlauf gefühlte Temperatur und Regen">';
+
+  // Fenster-Zonen
+  WINDOWS.forEach(w => {
+    const x0 = x(Math.min(...w.hours)), x1 = x(Math.max(...w.hours) + 1);
+    s += '<rect x="' + x0 + '" y="' + padT + '" width="' + (x1 - x0) + '" height="' + (H - padT - padB) + '" fill="#17242F" opacity="0.06" rx="4"/>';
+    s += '<text x="' + ((x0 + x1) / 2) + '" y="' + (padT - 4) + '" text-anchor="middle" font-size="9" fill="#5C6B78">' + w.label + '</text>';
+  });
+
+  // Regenbalken
+  rain.forEach((v, i) => {
+    if (v <= 0) return;
+    const bw = (W - padL - padR) / 24 - 2;
+    s += '<rect x="' + (x(i) - bw / 2) + '" y="' + yR(v) + '" width="' + bw + '" height="' + (H - padB - yR(v)) + '" fill="#2563C4" opacity="0.75" rx="2"/>';
+  });
+
+  // Temperaturkurve
+  const path = temps.map((v, i) => (i ? "L" : "M") + x(i).toFixed(1) + " " + yT(v).toFixed(1)).join(" ");
+  s += '<path d="' + path + '" fill="none" stroke="#D9662E" stroke-width="2.5" stroke-linecap="round"/>';
+
+  // Jetzt-Linie
+  if (nowHour >= 0 && nowHour < 24) {
+    const nx = x(nowHour + new Date().getMinutes() / 60);
+    s += '<line x1="' + nx + '" y1="' + padT + '" x2="' + nx + '" y2="' + (H - padB) + '" stroke="#17242F" stroke-width="1" stroke-dasharray="3 3" opacity="0.5"/>';
+  }
+
+  // Achsen-Labels
+  [0, 6, 12, 18, 23].forEach(hr => {
+    s += '<text x="' + x(hr) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="9" fill="#5C6B78">' + hr + '</text>';
+  });
+  [tMin, tMax].forEach(v => {
+    s += '<text x="2" y="' + (yT(v) + 3) + '" font-size="9" fill="#5C6B78">' + v + '°</text>';
+  });
+
+  s += "</svg>";
+  document.getElementById("chart").innerHTML = s;
+}
+
+async function init() {
+  const status = document.getElementById("status");
+  try {
+    const pos = await getPosition();
+    document.getElementById("loc").textContent = pos.name + " · " +
+      new Date().toLocaleDateString("de-CH", { weekday: "long", day: "numeric", month: "long" });
+    const data = await loadWeather(pos);
+    const nowHour = new Date().getHours();
+    renderWindows(data.hourly, nowHour);
+    renderChart(data.hourly, nowHour);
+    document.getElementById("foot").textContent =
+      "Daten: Open-Meteo · Stand " + new Date().toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
+    status.hidden = true;
+    document.getElementById("app").hidden = false;
+  } catch (e) {
+    status.textContent = "Wetterdaten konnten nicht geladen werden. Verbindung prüfen und Seite neu laden.";
+  }
+}
+init();
+</script>
+</body>
+</html>
