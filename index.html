@@ -38,6 +38,29 @@
     font-size: 0.85rem;
     margin-top: 2px;
   }
+  .daytoggle {
+    display: flex;
+    gap: 0;
+    margin: 12px 0 0;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    overflow: hidden;
+    width: max-content;
+  }
+  .daytoggle button {
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--muted);
+    background: var(--card);
+    border: none;
+    padding: 5px 16px;
+    cursor: pointer;
+  }
+  .daytoggle button[aria-pressed="true"] {
+    background: var(--ink);
+    color: var(--bg);
+  }
   .windows { display: flex; flex-direction: column; gap: 10px; }
   .win {
     background: var(--card);
@@ -134,6 +157,10 @@
 <header>
   <h1 id="title">Anziehen</h1>
   <div class="sub" id="loc">Standort wird ermittelt …</div>
+  <div class="daytoggle" id="daytoggle" hidden>
+    <button id="btn-today" aria-pressed="true">Heute</button>
+    <button id="btn-tomorrow" aria-pressed="false">Morgen</button>
+  </div>
 </header>
 
 <div id="status">Lade Wetterdaten …</div>
@@ -174,7 +201,7 @@ async function loadWeather(pos) {
     + "?latitude=" + pos.lat.toFixed(4)
     + "&longitude=" + pos.lon.toFixed(4)
     + "&hourly=apparent_temperature,precipitation_probability,precipitation"
-    + "&forecast_days=1&timezone=auto";
+    + "&forecast_days=2&timezone=auto";
   const res = await fetch(url);
   if (!res.ok) throw new Error("API " + res.status);
   return res.json();
@@ -186,6 +213,7 @@ function fmt(n, digits = 0) {
 
 function renderWindows(h, nowHour) {
   const box = document.getElementById("windows");
+  box.innerHTML = "";
   WINDOWS.forEach(w => {
     const temps = w.hours.map(i => h.apparent_temperature[i]);
     const temp = temps.reduce((a, b) => a + b, 0) / temps.length;
@@ -257,19 +285,44 @@ function renderChart(h, nowHour) {
   document.getElementById("chart").innerHTML = s;
 }
 
+let hourlyData = null;
+let posName = "";
+
+function sliceDay(h, day) {
+  const from = day * 24, to = from + 24;
+  return {
+    apparent_temperature: h.apparent_temperature.slice(from, to),
+    precipitation_probability: h.precipitation_probability.slice(from, to),
+    precipitation: h.precipitation.slice(from, to)
+  };
+}
+
+function renderDay(day) {
+  const d = new Date();
+  d.setDate(d.getDate() + day);
+  document.getElementById("loc").textContent = posName + " · " +
+    d.toLocaleDateString("de-CH", { weekday: "long", day: "numeric", month: "long" });
+  document.getElementById("btn-today").setAttribute("aria-pressed", day === 0);
+  document.getElementById("btn-tomorrow").setAttribute("aria-pressed", day === 1);
+  const nowHour = day === 0 ? new Date().getHours() : -1;
+  renderWindows(sliceDay(hourlyData, day), nowHour);
+  renderChart(sliceDay(hourlyData, day), nowHour);
+}
+
 async function init() {
   const status = document.getElementById("status");
   try {
     const pos = await getPosition();
-    document.getElementById("loc").textContent = pos.name + " · " +
-      new Date().toLocaleDateString("de-CH", { weekday: "long", day: "numeric", month: "long" });
+    posName = pos.name;
     const data = await loadWeather(pos);
-    const nowHour = new Date().getHours();
-    renderWindows(data.hourly, nowHour);
-    renderChart(data.hourly, nowHour);
+    hourlyData = data.hourly;
+    document.getElementById("btn-today").onclick = () => renderDay(0);
+    document.getElementById("btn-tomorrow").onclick = () => renderDay(1);
+    renderDay(new Date().getHours() >= 20 ? 1 : 0);
     document.getElementById("foot").textContent =
       "Daten: Open-Meteo · Stand " + new Date().toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
     status.hidden = true;
+    document.getElementById("daytoggle").hidden = false;
     document.getElementById("app").hidden = false;
   } catch (e) {
     status.textContent = "Wetterdaten konnten nicht geladen werden. Verbindung prüfen und Seite neu laden.";
