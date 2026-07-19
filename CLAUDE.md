@@ -19,13 +19,14 @@ Bewusst keine allgemeine Wetter-App. Bestehende Apps zeigen zu viel oder das Fal
 - Regenzeile wird ab 30 % Wahrscheinlichkeit oder 0.2 mm hervorgehoben, sonst "trocken"
 - Gewitter: Open-Meteo liefert keine Gewitterwahrscheinlichkeit; stattdessen Flag "Gewitter möglich" via `weather_code` 95/96/99 in den Fensterstunden (hebt die Regenzeile mit hervor)
 - Wetter-Symbol pro Fenster (Emoji aus `weather_code`, schlechteste Fensterstunde zählt); gefrierender Regen/Niesel (56/57/66/67) als 🧊 "Eisglätte"
+- Wetter-Icons im Chart: alle 3 h ein Emoji am oberen Rand, ausgerichtet auf die Gitterlinien; zeigt den Zustand zur vollen Stunde (Punktwert wie die Temperaturkurve, kein Worst-of-Slot); nachts via `is_day` Mond/Wolke statt Sonne; vergangene Stunden gedimmt
 - Chart-Zonen zeigen die echten Zeitfenster (`from`/`to`), nicht die einfliessenden Datenstunden
 - Temperatur pro Fenster: Mittelwert der Fensterstunden (offen: evtl. Minimum, wird im Gebrauch entschieden)
 - Fahrtwind in den Velo-Fenstern: 20 km/h Fahrgeschwindigkeit, Hinweg Richtung NO (45°), Rückweg SW (225°). Relative Anströmung = Windvektor minus Fahrvektor (aus `wind_speed_10m`/`wind_direction_10m`), Differenz zur reinen Windgeschwindigkeit geht mit Steadmans Windterm (−0.7 °C pro m/s) in die gefühlte Temperatur ein. Nur die Fenster-Temperatur ist angepasst, die Chart-Kurve zeigt weiter die unangepasste gefühlte Temperatur; Hinweis dazu im Footer.
 
 ## Technik (Stand V1)
 - Eine Datei: `index.html`, kein Build, kein Backend, kein Framework
-- API: Open-Meteo `/v1/forecast` mit `hourly=apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_direction_10m`, `forecast_days=2`, `timezone=auto`, `models=meteoswiss_icon_seamless` (MeteoSwiss ICON-CH1 1 km, dahinter ICON-CH2 2.1 km; ausserhalb des Alpenraum-Domains keine Daten); Heute/Morgen-Umschalter, ab 20:00 Uhr Standard Morgen; Arbeit/Freizeit-Umschalter, Standard richtet sich nach dem Wochentag des angezeigten Tags (Sa/So → Freizeit) und wird beim Tageswechsel neu gesetzt
+- API: Open-Meteo `/v1/forecast` mit `hourly=apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_direction_10m,is_day`, `forecast_days=2`, `timezone=auto`, `models=meteoswiss_icon_seamless` (MeteoSwiss ICON-CH1 1 km, dahinter ICON-CH2 2.1 km; ausserhalb des Alpenraum-Domains keine Daten); Heute/Morgen-Umschalter, ab 20:00 Uhr Standard Morgen; Arbeit/Freizeit-Umschalter, Standard richtet sich nach dem Wochentag des angezeigten Tags (Sa/So → Freizeit) und wird beim Tageswechsel neu gesetzt
 - Standort: `navigator.geolocation`, Fallback Basel (47.5596, 7.5886) mit sichtbarem Hinweis
 - Chart: handgebautes SVG — Temperaturkurve (orange #D9662E), Regenbalken (blau #2563C4), Zeitfenster als hinterlegte Zonen, gestrichelte Jetzt-Linie
 - Farben: bg #EDF1F5, ink #17242F, muted #5C6B78; Farbe nur als Datenkodierung, keine Deko

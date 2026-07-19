@@ -238,7 +238,7 @@ async function loadWeather(pos) {
   const url = "https://api.open-meteo.com/v1/forecast"
     + "?latitude=" + pos.lat.toFixed(4)
     + "&longitude=" + pos.lon.toFixed(4)
-    + "&hourly=apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_direction_10m"
+    + "&hourly=apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_direction_10m,is_day"
     + "&forecast_days=2&timezone=auto&models=meteoswiss_icon_seamless";
   const res = await fetch(url);
   if (!res.ok) throw new Error("API " + res.status);
@@ -297,7 +297,7 @@ function renderWindows(h, nowHour, windows) {
 }
 
 function renderChart(h, nowHour, windows) {
-  const W = 420, H = 150, padL = 30, padR = 8, padT = 14, padB = 22;
+  const W = 420, H = 170, padL = 30, padR = 8, padT = 34, padB = 22;
   const temps = h.apparent_temperature.slice(0, 24);
   const rain = h.precipitation.slice(0, 24).map(v => v ?? 0);
   // Achsengrenzen auf Vielfache von 3 gerundet (mit mind. 1° Abstand zur Kurve),
@@ -317,6 +317,15 @@ function renderChart(h, nowHour, windows) {
   }
   for (let v = tMin; v <= tMax; v += 3) {
     s += '<line x1="' + padL + '" y1="' + yT(v) + '" x2="' + (W - padR) + '" y2="' + yT(v) + '" stroke="#17242F" stroke-width="1" opacity="' + (v % 6 === 0 ? 0.11 : 0.05) + '"/>';
+  }
+
+  // Wetter-Icons alle 3 h am oberen Rand; klar/bewölkt nachts als Mond/Wolke,
+  // da weather_code nicht zwischen Tag und Nacht unterscheidet
+  for (let hr = 0; hr <= 23; hr += 3) {
+    const code = h.weather_code[hr] ?? 0;
+    let [sym, symText] = weatherSymbol(code);
+    if (h.is_day?.[hr] === 0 && code <= 2) [sym, symText] = code <= 1 ? ["🌙", "klar"] : ["☁️", "bewölkt"];
+    s += '<text x="' + x(hr) + '" y="12" text-anchor="middle" font-size="11"' + (hr < nowHour ? ' opacity="0.42"' : '') + '><title>' + symText + '</title>' + sym + '</text>';
   }
 
   // Fenster-Zonen (echte Zeitfenster, nicht die Datenstunden)
@@ -378,7 +387,8 @@ function sliceDay(h, day) {
     precipitation: h.precipitation.slice(from, to),
     weather_code: h.weather_code.slice(from, to),
     wind_speed_10m: h.wind_speed_10m.slice(from, to),
-    wind_direction_10m: h.wind_direction_10m.slice(from, to)
+    wind_direction_10m: h.wind_direction_10m.slice(from, to),
+    is_day: (h.is_day || []).slice(from, to)
   };
 }
 
