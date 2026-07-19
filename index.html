@@ -368,6 +368,8 @@ function renderChart(h, nowHour, windows) {
 let hourlyData = null;
 let posName = "";
 let loadedAt = "";
+let loadedAtMs = 0;
+let loadedDate = "";
 let currentDay = 0;
 let currentSet = "arbeit";
 
@@ -421,14 +423,21 @@ function render() {
     "Daten: Open-Meteo · Stand " + loadedAt;
 }
 
+async function loadData() {
+  const pos = await getPosition();
+  posName = pos.name;
+  const data = await loadWeather(pos);
+  hourlyData = data.hourly;
+  const now = new Date();
+  loadedAt = now.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
+  loadedAtMs = now.getTime();
+  loadedDate = now.toDateString();
+}
+
 async function init() {
   const status = document.getElementById("status");
   try {
-    const pos = await getPosition();
-    posName = pos.name;
-    const data = await loadWeather(pos);
-    hourlyData = data.hourly;
-    loadedAt = new Date().toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
+    await loadData();
     document.getElementById("btn-today").onclick = () => renderDay(0);
     document.getElementById("btn-tomorrow").onclick = () => renderDay(1);
     document.getElementById("btn-arbeit").onclick = () => renderSet("arbeit");
@@ -441,7 +450,58 @@ async function init() {
     status.textContent = "Wetterdaten konnten nicht geladen werden. Verbindung prüfen und Seite neu laden.";
   }
 }
+
+// iOS friert die Homescreen-App ein und stellt sie beim Öffnen ohne Neuladen
+// wieder her. Deshalb beim Zurückkehren: neu rendern (Jetzt-Linie, ausgegraute
+// Fenster), abgestandene Daten neu laden und auf eine neu deployte Version
+// prüfen.
+const STALE_MS = 10 * 60 * 1000;
+let baselineHtml = null;
+let refreshing = false;
+
+function fetchSelf() {
+  return fetch(location.pathname, { cache: "no-store" }).then(r => {
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return r.text();
+  });
+}
+
+async function checkVersion() {
+  try {
+    const html = await fetchSelf();
+    const changed = baselineHtml !== null && html !== baselineHtml;
+    baselineHtml = html;
+    if (!changed) return;
+    const last = Number(sessionStorage.getItem("wetterReload")) || 0;
+    if (Date.now() - last < 60000) return; // Schleifen-Schutz
+    sessionStorage.setItem("wetterReload", Date.now());
+    // Query-Parameter umgeht Browser- und CDN-Cache, sonst käme wieder die alte Version
+    location.replace(location.pathname + "?u=" + Date.now());
+  } catch (e) {}
+}
+
+async function onResume() {
+  if (refreshing) return;
+  refreshing = true;
+  try {
+    checkVersion();
+    if (!hourlyData) { await init(); return; }
+    const dayChanged = new Date().toDateString() !== loadedDate;
+    if (dayChanged || Date.now() - loadedAtMs > STALE_MS) {
+      try { await loadData(); } catch (e) {}
+    }
+    if (dayChanged) renderDay(new Date().getHours() >= 20 ? 1 : 0);
+    else render();
+  } finally {
+    refreshing = false;
+  }
+}
+
+window.addEventListener("pageshow", e => { if (e.persisted) onResume(); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) onResume(); });
+
 init();
+checkVersion(); // erste Antwort dient als Vergleichsbasis
 </script>
 </body>
 </html>

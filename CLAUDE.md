@@ -31,6 +31,7 @@ Bewusst keine allgemeine Wetter-App. Bestehende Apps zeigen zu viel oder das Fal
 - Chart: handgebautes SVG — Temperaturkurve (orange #D9662E), Regenbalken (blau #2563C4), Zeitfenster als hinterlegte Zonen, gestrichelte Jetzt-Linie
 - Farben: bg #EDF1F5, ink #17242F, muted #5C6B78; Farbe nur als Datenkodierung, keine Deko
 - `prefers-reduced-motion` respektiert
+- iOS-Homescreen-Betrieb: iOS stellt die eingefrorene App ohne Neuladen wieder her. Beim Zurückkehren (`pageshow`/`visibilitychange`) wird deshalb neu gerendert, Daten älter als 10 min oder nach Tageswechsel neu geladen (inkl. Reset der Tages-/Set-Defaults), und die eigene `index.html` per `no-store`-Fetch mit der beim Start geholten Vergleichsbasis verglichen — bei neu deployter Version genau ein automatischer Reload (Cache-Busting-Query, Schleifen-Schutz 60 s). Kein Manifest, kein Service Worker (bewusst: kein Offline-Anspruch)
 - Hosting: GitHub Pages (öffentliches Repo, Datei als index.html im Root)
 
 ## Bekannte Punkte / Kandidaten für V2
