@@ -297,7 +297,7 @@ function renderWindows(h, nowHour, windows) {
 }
 
 function renderChart(h, nowHour, windows) {
-  const W = 420, H = 170, padL = 30, padR = 8, padT = 34, padB = 22;
+  const W = 420, H = 192, padL = 30, padR = 8, padT = 56, padB = 22;
   const temps = h.apparent_temperature.slice(0, 24);
   const rain = h.precipitation.slice(0, 24).map(v => v ?? 0);
   // Achsengrenzen auf Vielfache von 3 gerundet (mit mind. 1° Abstand zur Kurve),
@@ -325,7 +325,7 @@ function renderChart(h, nowHour, windows) {
     const code = h.weather_code[hr] ?? 0;
     let [sym, symText] = weatherSymbol(code);
     if (h.is_day?.[hr] === 0 && code <= 2) [sym, symText] = code <= 1 ? ["🌙", "klar"] : ["☁️", "bewölkt"];
-    s += '<text x="' + x(hr) + '" y="12" text-anchor="middle" font-size="11"' + (hr < nowHour ? ' opacity="0.42"' : '') + '><title>' + symText + '</title>' + sym + '</text>';
+    s += '<text x="' + x(hr) + '" y="30" text-anchor="middle" font-size="28"' + (hr < nowHour ? ' opacity="0.42"' : '') + '><title>' + symText + '</title>' + sym + '</text>';
   }
 
   // Fenster-Zonen (echte Zeitfenster, nicht die Datenstunden)
