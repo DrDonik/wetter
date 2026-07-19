@@ -6,10 +6,9 @@ Bewusst keine allgemeine Wetter-App. Bestehende Apps zeigen zu viel oder das Fal
 
 ## Nutzungskontext (fix, nicht hinterfragen)
 - Nutzer pendelt mit dem **Velo**, mittags zusätzlich **zu Fuss** draussen
-- Drei relevante Zeitfenster:
-  - Hinweg (Velo): 07:30–08:00 → Stunden 7–8
-  - Mittag (zu Fuss): 12:00–13:00 → Stunde 12
-  - Rückweg (Velo): 17:00–17:30 → Stunde 17
+- Zwei Fenster-Sets, umschaltbar (Arbeit/Freizeit), samstags/sonntags Standard Freizeit:
+  - Arbeit: Hinweg (Velo) 07:30–08:00 → Stunden 7–8 · Mittag (zu Fuss) 12:00–13:00 → Stunde 12 · Rückweg (Velo) 17:00–17:30 → Stunde 17
+  - Freizeit: Vormittag (zu Fuss) 9:00–10:00 → Stunde 9 · Nachmittag (zu Fuss) 15:00–16:00 → Stunde 15
 - Entscheidungsfaktoren: Regen (Wahrscheinlichkeit UND Menge, wegen Velo), gefühlte Temperatur, Tages-Temperaturspanne (Schichten). Wind nicht separat anzeigen.
 - Sprache: Deutsch (Schweiz), kein ß
 
@@ -26,7 +25,7 @@ Bewusst keine allgemeine Wetter-App. Bestehende Apps zeigen zu viel oder das Fal
 
 ## Technik (Stand V1)
 - Eine Datei: `index.html`, kein Build, kein Backend, kein Framework
-- API: Open-Meteo `/v1/forecast` mit `hourly=apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_direction_10m`, `forecast_days=2`, `timezone=auto`, `models=meteoswiss_icon_seamless` (MeteoSwiss ICON-CH1 1 km, dahinter ICON-CH2 2.1 km; ausserhalb des Alpenraum-Domains keine Daten); Heute/Morgen-Umschalter, ab 20:00 Uhr Standard Morgen
+- API: Open-Meteo `/v1/forecast` mit `hourly=apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_direction_10m`, `forecast_days=2`, `timezone=auto`, `models=meteoswiss_icon_seamless` (MeteoSwiss ICON-CH1 1 km, dahinter ICON-CH2 2.1 km; ausserhalb des Alpenraum-Domains keine Daten); Heute/Morgen-Umschalter, ab 20:00 Uhr Standard Morgen; Arbeit/Freizeit-Umschalter, Standard richtet sich nach dem Wochentag des angezeigten Tags (Sa/So → Freizeit) und wird beim Tageswechsel neu gesetzt
 - Standort: `navigator.geolocation`, Fallback Basel (47.5596, 7.5886) mit sichtbarem Hinweis
 - Chart: handgebautes SVG — Temperaturkurve (orange #D9662E), Regenbalken (blau #2563C4), Zeitfenster als hinterlegte Zonen, gestrichelte Jetzt-Linie
 - Farben: bg #EDF1F5, ink #17242F, muted #5C6B78; Farbe nur als Datenkodierung, keine Deko
@@ -35,7 +34,7 @@ Bewusst keine allgemeine Wetter-App. Bestehende Apps zeigen zu viel oder das Fal
 
 ## Bekannte Punkte / Kandidaten für V2
 - Zeitfenster, Fahrgeschwindigkeit und Fahrtrichtungen konfigurierbar machen (aktuell hardcoded)
-- Wochenende: Arbeitsweg-Fenster ergeben samstags/sonntags wenig Sinn
+- Modell-Fallback fürs Ausland: `meteoswiss_icon_seamless` liefert ausserhalb des Alpenraums nichts
 - Empfehlungslogik erst nach Kalibrierung des persönlichen Kälteempfindens
 
 ## Arbeitsweise

@@ -38,10 +38,10 @@
     font-size: 0.85rem;
     margin-top: 2px;
   }
+  .toggles { display: flex; gap: 8px; margin: 12px 0 0; }
   .daytoggle {
     display: flex;
     gap: 0;
-    margin: 12px 0 0;
     border: 1px solid var(--line);
     border-radius: 999px;
     overflow: hidden;
@@ -164,9 +164,15 @@
 <header>
   <h1 id="title">Anziehen</h1>
   <div class="sub" id="loc">Standort wird ermittelt …</div>
-  <div class="daytoggle" id="daytoggle" hidden>
-    <button id="btn-today" aria-pressed="true">Heute</button>
-    <button id="btn-tomorrow" aria-pressed="false">Morgen</button>
+  <div class="toggles" id="toggles" hidden>
+    <div class="daytoggle">
+      <button id="btn-today" aria-pressed="true">Heute</button>
+      <button id="btn-tomorrow" aria-pressed="false">Morgen</button>
+    </div>
+    <div class="daytoggle">
+      <button id="btn-arbeit" aria-pressed="true">Arbeit</button>
+      <button id="btn-freizeit" aria-pressed="false">Freizeit</button>
+    </div>
   </div>
 </header>
 
@@ -185,11 +191,17 @@
 </main>
 
 <script>
-const WINDOWS = [
-  { label: "Hinweg",  mode: "Velo",    hours: [7, 8], time: "7:30–8:00",   from: 7.5,  to: 8,    heading: 45 },
-  { label: "Mittag",  mode: "zu Fuss", hours: [12],   time: "12:00–13:00", from: 12,   to: 13,   heading: null },
-  { label: "Rückweg", mode: "Velo",    hours: [17],   time: "17:00–17:30", from: 17,   to: 17.5, heading: 225 }
-];
+const WINDOW_SETS = {
+  arbeit: [
+    { label: "Hinweg",  mode: "Velo",    hours: [7, 8], time: "7:30–8:00",   from: 7.5,  to: 8,    heading: 45 },
+    { label: "Mittag",  mode: "zu Fuss", hours: [12],   time: "12:00–13:00", from: 12,   to: 13,   heading: null },
+    { label: "Rückweg", mode: "Velo",    hours: [17],   time: "17:00–17:30", from: 17,   to: 17.5, heading: 225 }
+  ],
+  freizeit: [
+    { label: "Vormittag",   mode: "zu Fuss", hours: [9],  time: "9:00–10:00",  from: 9,  to: 10, heading: null },
+    { label: "Nachmittag",  mode: "zu Fuss", hours: [15], time: "15:00–16:00", from: 15, to: 16, heading: null }
+  ]
+};
 const RIDE_KMH = 20; // Fahrgeschwindigkeit Velo; heading = Fahrtrichtung (0° = N, 45° = NO, 225° = SW)
 const THUNDER_CODES = [95, 96, 99];
 
@@ -250,10 +262,10 @@ function fmt(n, digits = 0) {
   return n.toLocaleString("de-CH", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
-function renderWindows(h, nowHour) {
+function renderWindows(h, nowHour, windows) {
   const box = document.getElementById("windows");
   box.innerHTML = "";
-  WINDOWS.forEach(w => {
+  windows.forEach(w => {
     const temps = w.hours.map(i => {
       const t = h.apparent_temperature[i];
       if (w.heading == null || h.wind_speed_10m?.[i] == null || h.wind_direction_10m?.[i] == null) return t;
@@ -283,7 +295,7 @@ function renderWindows(h, nowHour) {
   });
 }
 
-function renderChart(h, nowHour) {
+function renderChart(h, nowHour, windows) {
   const W = 420, H = 150, padL = 30, padR = 8, padT = 14, padB = 22;
   const temps = h.apparent_temperature.slice(0, 24);
   const rain = h.precipitation.slice(0, 24).map(v => v ?? 0);
@@ -297,7 +309,7 @@ function renderChart(h, nowHour) {
   let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Tagesverlauf gefühlte Temperatur und Regen">';
 
   // Fenster-Zonen (echte Zeitfenster, nicht die Datenstunden)
-  WINDOWS.forEach(w => {
+  windows.forEach(w => {
     const x0 = x(w.from), x1 = x(w.to);
     s += '<rect x="' + x0 + '" y="' + padT + '" width="' + (x1 - x0) + '" height="' + (H - padT - padB) + '" fill="#17242F" opacity="0.06" rx="4"/>';
     s += '<text x="' + ((x0 + x1) / 2) + '" y="' + (padT - 4) + '" text-anchor="middle" font-size="9" fill="#5C6B78">' + w.label + '</text>';
@@ -334,6 +346,17 @@ function renderChart(h, nowHour) {
 
 let hourlyData = null;
 let posName = "";
+let loadedAt = "";
+let currentDay = 0;
+let currentSet = "arbeit";
+
+// Samstag/Sonntag standardmässig Freizeit-Fenster
+function defaultSetFor(day) {
+  const d = new Date();
+  d.setDate(d.getDate() + day);
+  const wd = d.getDay();
+  return wd === 0 || wd === 6 ? "freizeit" : "arbeit";
+}
 
 function sliceDay(h, day) {
   const from = day * 24, to = from + 24;
@@ -348,15 +371,32 @@ function sliceDay(h, day) {
 }
 
 function renderDay(day) {
+  currentDay = day;
+  currentSet = defaultSetFor(day);
+  render();
+}
+
+function renderSet(set) {
+  currentSet = set;
+  render();
+}
+
+function render() {
   const d = new Date();
-  d.setDate(d.getDate() + day);
+  d.setDate(d.getDate() + currentDay);
   document.getElementById("loc").textContent = posName + " · " +
     d.toLocaleDateString("de-CH", { weekday: "long", day: "numeric", month: "long" });
-  document.getElementById("btn-today").setAttribute("aria-pressed", day === 0);
-  document.getElementById("btn-tomorrow").setAttribute("aria-pressed", day === 1);
-  const nowHour = day === 0 ? new Date().getHours() : -1;
-  renderWindows(sliceDay(hourlyData, day), nowHour);
-  renderChart(sliceDay(hourlyData, day), nowHour);
+  document.getElementById("btn-today").setAttribute("aria-pressed", currentDay === 0);
+  document.getElementById("btn-tomorrow").setAttribute("aria-pressed", currentDay === 1);
+  document.getElementById("btn-arbeit").setAttribute("aria-pressed", currentSet === "arbeit");
+  document.getElementById("btn-freizeit").setAttribute("aria-pressed", currentSet === "freizeit");
+  const nowHour = currentDay === 0 ? new Date().getHours() : -1;
+  const windows = WINDOW_SETS[currentSet];
+  renderWindows(sliceDay(hourlyData, currentDay), nowHour, windows);
+  renderChart(sliceDay(hourlyData, currentDay), nowHour, windows);
+  document.getElementById("foot").textContent =
+    (currentSet === "arbeit" ? "Velo-Fenster: gefühlt inkl. Fahrtwind (" + RIDE_KMH + " km/h) · " : "") +
+    "Daten: Open-Meteo · Stand " + loadedAt;
 }
 
 async function init() {
@@ -366,14 +406,14 @@ async function init() {
     posName = pos.name;
     const data = await loadWeather(pos);
     hourlyData = data.hourly;
+    loadedAt = new Date().toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
     document.getElementById("btn-today").onclick = () => renderDay(0);
     document.getElementById("btn-tomorrow").onclick = () => renderDay(1);
+    document.getElementById("btn-arbeit").onclick = () => renderSet("arbeit");
+    document.getElementById("btn-freizeit").onclick = () => renderSet("freizeit");
     renderDay(new Date().getHours() >= 20 ? 1 : 0);
-    document.getElementById("foot").textContent =
-      "Velo-Fenster: gefühlt inkl. Fahrtwind (" + RIDE_KMH + " km/h) · Daten: Open-Meteo · Stand " +
-      new Date().toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
     status.hidden = true;
-    document.getElementById("daytoggle").hidden = false;
+    document.getElementById("toggles").hidden = false;
     document.getElementById("app").hidden = false;
   } catch (e) {
     status.textContent = "Wetterdaten konnten nicht geladen werden. Verbindung prüfen und Seite neu laden.";
