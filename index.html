@@ -417,7 +417,7 @@ function render() {
   renderWindows(sliceDay(hourlyData, currentDay), nowHour, windows);
   renderChart(sliceDay(hourlyData, currentDay), nowHour, windows);
   document.getElementById("foot").textContent =
-    (currentSet === "arbeit" ? "Velo-Fenster: gefühlt inkl. Fahrtwind (" + RIDE_KMH + " km/h) · " : "") +
+    (currentSet === "arbeit" ? "VELO: gefühlt inkl. Fahrtwind (" + RIDE_KMH + " km/h) · " : "") +
     "Daten: Open-Meteo · Stand " + loadedAt;
 }
 
