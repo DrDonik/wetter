@@ -288,7 +288,7 @@ function renderWindows(h, nowHour, windows) {
     el.innerHTML =
       '<div><span class="label">' + w.label + '</span>' +
       '<span class="time">' + w.time + '</span>' +
-      '<span class="mode">' + w.mode + '</span></div>' +
+      (w.mode === "Velo" ? '<span class="mode">' + w.mode + '</span>' : '') + '</div>' +
       '<div class="sym" role="img" title="' + symText + '" aria-label="' + symText + '">' + sym + '</div>' +
       '<div class="temp">' + fmt(temp) + '<small>°</small></div>' +
       '<div class="rain' + (wet ? " wet" : "") + '">' + (past ? "vorbei · " : "") + rainText + '</div>';
