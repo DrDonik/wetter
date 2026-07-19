@@ -8,7 +8,7 @@ Bewusst keine allgemeine Wetter-App. Bestehende Apps zeigen zu viel oder das Fal
 - Nutzer pendelt mit dem **Velo**, mittags zusätzlich **zu Fuss** draussen
 - Zwei Fenster-Sets, umschaltbar (Arbeit/Freizeit), samstags/sonntags Standard Freizeit:
   - Arbeit: Hinweg (Velo) 07:30–08:00 → Stunden 7–8 · Mittag (zu Fuss) 12:00–13:00 → Stunde 12 · Rückweg (Velo) 17:00–17:30 → Stunde 17
-  - Freizeit: Vormittag (zu Fuss) 9:00–10:00 → Stunde 9 · Nachmittag (zu Fuss) 15:00–16:00 → Stunde 15
+  - Freizeit: Vormittag (zu Fuss) 9:00–10:00 → Stunde 9 · Mittag (zu Fuss) 12:00–13:00 → Stunde 12 · Nachmittag (zu Fuss) 15:00–16:00 → Stunde 15
 - Entscheidungsfaktoren: Regen (Wahrscheinlichkeit UND Menge, wegen Velo), gefühlte Temperatur, Tages-Temperaturspanne (Schichten). Wind nicht separat anzeigen.
 - Sprache: Deutsch (Schweiz), kein ß
 
