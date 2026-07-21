@@ -223,12 +223,32 @@ function weatherSymbol(code) {
 }
 const FALLBACK = { lat: 47.5596, lon: 7.5886, name: "Basel (Standard)" };
 
-function getPosition() {
+// iOS-PWAs merken sich die Geolocation-Freigabe über Kaltstarts hinweg nicht
+// zuverlässig, ein Abruf bei jedem Laden liesse den Dialog täglich erscheinen.
+// Standort daher nach der ersten Freigabe cachen und danach nur noch auf
+// ausdrücklichen Wunsch (Tippen auf die Ortszeile) neu abrufen.
+const POS_KEY = "wetterPos";
+
+function loadStoredPos() {
+  try {
+    const p = JSON.parse(localStorage.getItem(POS_KEY));
+    if (p && typeof p.lat === "number" && typeof p.lon === "number") return p;
+  } catch (e) {}
+  return null;
+}
+
+function storePos(p) {
+  try { localStorage.setItem(POS_KEY, JSON.stringify({ lat: p.lat, lon: p.lon, name: p.name })); } catch (e) {}
+}
+
+// Fragt den Standort aktiv an und löst damit den iOS-Dialog aus. Nur beim
+// ersten Start (kein Cache) oder beim manuellen Aktualisieren aufrufen.
+function requestPosition() {
   return new Promise(resolve => {
     if (!navigator.geolocation) return resolve(FALLBACK);
     navigator.geolocation.getCurrentPosition(
       p => resolve({ lat: p.coords.latitude, lon: p.coords.longitude, name: "Dein Standort" }),
-      () => resolve(FALLBACK),
+      () => resolve(loadStoredPos() || FALLBACK),
       { timeout: 6000, maximumAge: 600000 }
     );
   });
@@ -423,10 +443,21 @@ function render() {
     "Daten: Open-Meteo · Stand " + loadedAt;
 }
 
+let currentPos = null;
+
 async function loadData() {
-  const pos = await getPosition();
-  posName = pos.name;
-  const data = await loadWeather(pos);
+  // Gecachten Standort ohne Dialog verwenden; nur beim allerersten Start
+  // (nichts gecacht) aktiv anfragen. currentPos hält die Position über
+  // Aktualisierungen innerhalb einer Sitzung.
+  if (!currentPos) {
+    currentPos = loadStoredPos();
+    if (!currentPos) {
+      currentPos = await requestPosition();
+      storePos(currentPos);
+    }
+  }
+  posName = currentPos.name;
+  const data = await loadWeather(currentPos);
   hourlyData = data.hourly;
   const now = new Date();
   loadedAt = now.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
@@ -434,10 +465,25 @@ async function loadData() {
   loadedDate = now.toDateString();
 }
 
+// Manuelles Neu-Anfragen des Standorts (löst den iOS-Dialog bewusst aus).
+async function refreshLocation() {
+  const loc = document.getElementById("loc");
+  loc.textContent = "Standort wird ermittelt …";
+  const pos = await requestPosition();
+  currentPos = pos;
+  storePos(pos);
+  try { await loadData(); } catch (e) {}
+  render();
+}
+
 async function init() {
   const status = document.getElementById("status");
   try {
     await loadData();
+    const loc = document.getElementById("loc");
+    loc.style.cursor = "pointer";
+    loc.title = "Tippen, um den Standort neu zu ermitteln";
+    loc.onclick = refreshLocation;
     document.getElementById("btn-today").onclick = () => renderDay(0);
     document.getElementById("btn-tomorrow").onclick = () => renderDay(1);
     document.getElementById("btn-arbeit").onclick = () => renderSet("arbeit");
