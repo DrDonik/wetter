@@ -38,6 +38,16 @@
     font-size: 0.85rem;
     margin-top: 2px;
   }
+  .locmode {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    border-bottom: 1px dotted var(--muted);
+    -webkit-tap-highlight-color: transparent;
+  }
   .toggles { display: flex; gap: 8px; margin: 12px 0 0; }
   .daytoggle {
     display: flex;
@@ -221,17 +231,36 @@ function weatherSymbol(code) {
   if (code === 1)  return ["🌤️", "leicht bewölkt"];
   return ["☀️", "klar"];
 }
-const FALLBACK = { lat: 47.5596, lon: 7.5886, name: "Basel (Standard)" };
+// "Zu Hause" = feste Koordinaten, damit im Alltag nie ein Standort-Dialog kommt.
+const HOME = { lat: 47.5596, lon: 7.5886, name: "Zu Hause" };
 
-function getPosition() {
+// Aktuellen Standort abfragen (nur im Reise-Modus, nur bei ausdrücklicher Aktion)
+function getTravelPos() {
   return new Promise(resolve => {
-    if (!navigator.geolocation) return resolve(FALLBACK);
+    if (!navigator.geolocation) return resolve(null);
     navigator.geolocation.getCurrentPosition(
-      p => resolve({ lat: p.coords.latitude, lon: p.coords.longitude, name: "Dein Standort" }),
-      () => resolve(FALLBACK),
+      p => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
+      () => resolve(null),
       { timeout: 6000, maximumAge: 600000 }
     );
   });
+}
+
+// "Zu Hause" nutzt HOME ohne Ortung. "Auf Reisen" ortet live, cacht das Ergebnis
+// und ortet nur bei ausdrücklichem Umschalten (forceLocate) neu — beim blossen
+// Öffnen/Zurückkehren wird der gecachte Reise-Ort verwendet, also kein Dialog.
+async function resolvePosition(forceLocate) {
+  if (locMode === "home") return { ...HOME };
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem("wetterTravelPos") || "null"); } catch (e) {}
+  if (!forceLocate && cached) return { lat: cached.lat, lon: cached.lon, name: "Auf Reisen" };
+  const live = await getTravelPos();
+  if (live) {
+    localStorage.setItem("wetterTravelPos", JSON.stringify(live));
+    return { lat: live.lat, lon: live.lon, name: "Auf Reisen" };
+  }
+  if (cached) return { lat: cached.lat, lon: cached.lon, name: "Auf Reisen" };
+  return { lat: HOME.lat, lon: HOME.lon, name: "Auf Reisen" };
 }
 
 async function loadWeather(pos) {
@@ -372,6 +401,8 @@ let loadedAtMs = 0;
 let loadedDate = "";
 let currentDay = 0;
 let currentSet = "arbeit";
+let locMode = localStorage.getItem("wetterLocMode") === "travel" ? "travel" : "home";
+let switchingMode = false;
 
 // Samstag/Sonntag standardmässig Freizeit-Fenster
 function defaultSetFor(day) {
@@ -408,8 +439,9 @@ function renderSet(set) {
 function render() {
   const d = new Date();
   d.setDate(d.getDate() + currentDay);
-  document.getElementById("loc").textContent = posName + " · " +
-    d.toLocaleDateString("de-CH", { weekday: "long", day: "numeric", month: "long" });
+  const dateStr = d.toLocaleDateString("de-CH", { weekday: "long", day: "numeric", month: "long" });
+  document.getElementById("loc").innerHTML =
+    '<button type="button" id="locmode" class="locmode">' + posName + '</button> · ' + dateStr;
   document.getElementById("btn-today").setAttribute("aria-pressed", currentDay === 0);
   document.getElementById("btn-tomorrow").setAttribute("aria-pressed", currentDay === 1);
   document.getElementById("btn-arbeit").setAttribute("aria-pressed", currentSet === "arbeit");
@@ -423,8 +455,22 @@ function render() {
     "Daten: Open-Meteo · Stand " + loadedAt;
 }
 
-async function loadData() {
-  const pos = await getPosition();
+// Modus umschalten: "Auf Reisen" ortet dabei live neu (forceLocate), "Zu Hause"
+// braucht keine Ortung. Reload läuft asynchron; Doppel-Tipps werden blockiert.
+async function toggleLocMode() {
+  if (switchingMode) return;
+  switchingMode = true;
+  locMode = locMode === "home" ? "travel" : "home";
+  localStorage.setItem("wetterLocMode", locMode);
+  const modeEl = document.getElementById("locmode");
+  if (modeEl) modeEl.textContent = "…";
+  try { await loadData(true); } catch (e) {}
+  render();
+  switchingMode = false;
+}
+
+async function loadData(forceLocate) {
+  const pos = await resolvePosition(forceLocate);
   posName = pos.name;
   const data = await loadWeather(pos);
   hourlyData = data.hourly;
@@ -499,6 +545,9 @@ async function onResume() {
 
 window.addEventListener("pageshow", e => { if (e.persisted) onResume(); });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) onResume(); });
+document.getElementById("loc").addEventListener("click", e => {
+  if (e.target.closest("#locmode")) toggleLocMode();
+});
 
 init();
 checkVersion(); // erste Antwort dient als Vergleichsbasis
