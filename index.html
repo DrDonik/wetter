@@ -225,9 +225,14 @@ const FALLBACK = { lat: 47.5596, lon: 7.5886, name: "Basel (Standard)" };
 
 // iOS-PWAs merken sich die Geolocation-Freigabe über Kaltstarts hinweg nicht
 // zuverlässig, ein Abruf bei jedem Laden liesse den Dialog täglich erscheinen.
-// Standort daher nach der ersten Freigabe cachen und danach nur noch auf
-// ausdrücklichen Wunsch (Tippen auf die Ortszeile) neu abrufen.
+// Standort daher nach der ersten Freigabe cachen und danach ohne Dialog
+// verwenden. Ein automatischer Neu-Abruf erfolgt nur bei Zeitzonenwechsel
+// (permission-freies Reise-Signal), sonst manuell per Tippen auf die Ortszeile.
 const POS_KEY = "wetterPos";
+
+function deviceTz() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) { return ""; }
+}
 
 function loadStoredPos() {
   try {
@@ -238,7 +243,9 @@ function loadStoredPos() {
 }
 
 function storePos(p) {
-  try { localStorage.setItem(POS_KEY, JSON.stringify({ lat: p.lat, lon: p.lon, name: p.name })); } catch (e) {}
+  try {
+    localStorage.setItem(POS_KEY, JSON.stringify({ lat: p.lat, lon: p.lon, name: p.name, tz: deviceTz() }));
+  } catch (e) {}
 }
 
 // Fragt den Standort aktiv an und löst damit den iOS-Dialog aus. Nur beim
@@ -450,8 +457,15 @@ async function loadData() {
   // (nichts gecacht) aktiv anfragen. currentPos hält die Position über
   // Aktualisierungen innerhalb einer Sitzung.
   if (!currentPos) {
-    currentPos = loadStoredPos();
-    if (!currentPos) {
+    const stored = loadStoredPos();
+    if (stored && stored.tz && stored.tz !== deviceTz()) {
+      // Zeitzone hat sich geändert → vermutlich verreist: einmal neu anfragen.
+      currentPos = await requestPosition();
+      storePos(currentPos);
+    } else if (stored) {
+      currentPos = stored;
+      if (!stored.tz) storePos(stored); // Zeitzone für Altbestand nachtragen
+    } else {
       currentPos = await requestPosition();
       storePos(currentPos);
     }

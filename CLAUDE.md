@@ -27,7 +27,7 @@ Bewusst keine allgemeine Wetter-App. Bestehende Apps zeigen zu viel oder das Fal
 ## Technik (Stand V1)
 - Eine Datei: `index.html`, kein Build, kein Backend, kein Framework
 - API: Open-Meteo `/v1/forecast` mit `hourly=apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_direction_10m,is_day`, `forecast_days=2`, `timezone=auto`, `models=meteoswiss_icon_seamless` (MeteoSwiss ICON-CH1 1 km, dahinter ICON-CH2 2.1 km; ausserhalb des Alpenraum-Domains keine Daten); Heute/Morgen-Umschalter, ab 20:00 Uhr Standard Morgen; Arbeit/Freizeit-Umschalter, Standard richtet sich nach dem Wochentag des angezeigten Tags (Sa/So → Freizeit) und wird beim Tageswechsel neu gesetzt
-- Standort: `navigator.geolocation`, Fallback Basel (47.5596, 7.5886) mit sichtbarem Hinweis
+- Standort: `navigator.geolocation`, Fallback Basel (47.5596, 7.5886) mit sichtbarem Hinweis. Position wird nach der ersten Freigabe in `localStorage` gecacht und danach ohne Dialog verwendet (iOS-PWAs behalten die Geolocation-Freigabe über Kaltstarts nicht zuverlässig, ein Abruf bei jedem Laden fragte sonst täglich neu). Automatischer Neu-Abruf nur bei Zeitzonenwechsel (permission-freies Reise-Signal, gespeicherte `tz` vs. `Intl…timeZone`); zusätzlich manueller Neu-Abruf per Tippen auf die Ortszeile
 - Chart: handgebautes SVG — Temperaturkurve (orange #D9662E), Regenbalken (blau #2563C4), Zeitfenster als hinterlegte Zonen, gestrichelte Jetzt-Linie
 - Farben: bg #EDF1F5, ink #17242F, muted #5C6B78; Farbe nur als Datenkodierung, keine Deko
 - `prefers-reduced-motion` respektiert
