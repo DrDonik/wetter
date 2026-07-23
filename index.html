@@ -251,19 +251,18 @@ function getPos() {
 // Koordinaten -> Gemeindename via geo.admin (nur Schweiz). Liefert null, wenn
 // nichts gefunden oder der Dienst nicht erreichbar ist.
 async function resolveName(lat, lon) {
-  const url = "https://api3.geo.admin.ch/rest/services/api/MapServer/identify"
+  const url = "https://api3.geo.admin.ch/rest/services/ech/MapServer/identify"
     + "?geometry=" + lon + "," + lat
-    + "&geometryType=esriGeometryPoint"
-    + "&layers=all:ch.swisstopo.swissboundaries3d-gemeinde-flaeche"
-    + "&tolerance=0&sr=4326&returnGeometry=false"
-    + "&mapExtent=0,0,100,100&imageDisplay=100,100,96";
+    + "&geometryType=point&geometryFormat=geojson&sr=4326"
+    + "&layers=all:ch.swisstopo.swissboundaries3d-gemeinde-flaeche.fill"
+    + "&returnGeometry=false";
   try {
     const res = await fetch(url);
     if (!res.ok) return null;
     const data = await res.json();
     const r = data.results?.[0];
-    const a = r?.attributes || {};
-    return a.gemname || a.name || a.gemeinde || a.bez || r?.label || null;
+    const a = r?.attributes || r?.properties || {};
+    return a.name || a.gemname || null;
   } catch (e) {
     return null;
   }
