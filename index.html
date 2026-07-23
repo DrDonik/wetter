@@ -250,24 +250,36 @@ function getPos(maxAge) {
   });
 }
 
-// Koordinaten -> Gemeindename via geo.admin (nur Schweiz). Liefert null, wenn
-// nichts gefunden oder der Dienst nicht erreichbar ist.
-async function resolveName(lat, lon) {
+// geo.admin identify (nur Schweiz) auf einen Layer, gibt die results zurück.
+async function geoIdentify(lat, lon, layer, limit) {
   const url = "https://api3.geo.admin.ch/rest/services/all/MapServer/identify"
     + "?geometry=" + lon + "," + lat
     + "&geometryType=esriGeometryPoint&geometryFormat=geojson&sr=4326"
-    + "&layers=all:ch.swisstopo.swissboundaries3d-gemeinde-flaeche.fill"
-    + "&imageDisplay=1000,1000,96&tolerance=0&limit=1&returnGeometry=false";
+    + "&layers=all:" + layer
+    + "&imageDisplay=1000,1000,96&tolerance=0&limit=" + limit + "&returnGeometry=false";
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("geo.admin " + res.status);
+  return (await res.json()).results || [];
+}
+
+// Koordinaten -> Ortsname via geo.admin. Bevorzugt die Ortschaft (feiner, z. B.
+// eingemeindete Namen mit eigener PLZ wie "Matten (St. Stephan)"), sonst die
+// politische Gemeinde. Liefert null, wenn nichts passt oder der Dienst
+// nicht erreichbar ist (Aufrufer zeigt dann die Koordinaten).
+async function resolveName(lat, lon) {
+  // 1. Ortschaftenverzeichnis: Ortschaftsname im Feld langtext
   try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const data = await res.json();
-    const r = data.results?.[0];
-    const a = r?.properties || r?.attributes || {};
-    return a.gemname || a.name || null;
-  } catch (e) {
-    return null;
-  }
+    const r = await geoIdentify(lat, lon, "ch.swisstopo-vd.ortschaftenverzeichnis_plz", 1);
+    if (r[0]?.properties?.langtext) return r[0].properties.langtext;
+  } catch (e) {}
+  // 2. Fallback politische Gemeinde. Der Layer enthält historische Jahresstände,
+  // darum den aktuellen herauspicken (limit hoch genug für alle Jahre am Punkt).
+  try {
+    const r = await geoIdentify(lat, lon, "ch.swisstopo.swissboundaries3d-gemeinde-flaeche.fill", 200);
+    const cur = r.find(f => f.properties?.is_current_jahr === true);
+    if (cur?.properties?.gemname) return cur.properties.gemname;
+  } catch (e) {}
+  return null;
 }
 
 function coordName(lat, lon) {
