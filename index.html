@@ -236,14 +236,16 @@ function weatherSymbol(code) {
 // dass der Nutzer den Namen antippt.
 const FALLBACK = { lat: 47.5596, lon: 7.5886, name: "Basel" };
 
-// Aktuellen Standort abfragen (nur bei ausdrücklicher Aktion bzw. Erststart)
-function getPos() {
+// Aktuellen Standort abfragen (nur bei ausdrücklicher Aktion bzw. Erststart).
+// maxAge = wie alt ein gecachter Geräte-Fix sein darf: beim bewussten Neu-Orten
+// 0 (frische Messung), beim Erststart darf ein junger Cache-Fix genügen.
+function getPos(maxAge) {
   return new Promise(resolve => {
     if (!navigator.geolocation) return resolve(null);
     navigator.geolocation.getCurrentPosition(
       p => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
       () => resolve(null),
-      { timeout: 6000, maximumAge: 600000 }
+      { timeout: 6000, maximumAge: maxAge }
     );
   });
 }
@@ -275,11 +277,11 @@ function coordName(lat, lon) {
 // Standort bestimmen: gecacht (normales Öffnen) oder frisch orten (locate=true;
 // Klick auf den Namen bzw. Erststart ohne Cache). Bei fehlgeschlagener Ortung
 // bleibt der alte Standort erhalten (am Namen sieht man, dass nichts kam).
-async function resolveLocation(locate) {
+async function resolveLocation(locate, fresh) {
   let cached = null;
   try { cached = JSON.parse(localStorage.getItem("wetterLoc") || "null"); } catch (e) {}
   if (!locate && cached) return cached;
-  const live = await getPos();
+  const live = await getPos(fresh ? 0 : 600000);
   if (!live) return cached || { ...FALLBACK };
   const name = await resolveName(live.lat, live.lon);
   const loc = { lat: live.lat, lon: live.lon, name: name || coordName(live.lat, live.lon) };
@@ -485,13 +487,13 @@ async function relocate() {
   locating = true;
   const modeEl = document.getElementById("locmode");
   if (modeEl) modeEl.textContent = "…";
-  try { await loadData(true); } catch (e) {}
+  try { await loadData(true, true); } catch (e) {}
   render();
   locating = false;
 }
 
-async function loadData(locate) {
-  const pos = await resolveLocation(locate);
+async function loadData(locate, fresh) {
+  const pos = await resolveLocation(locate, fresh);
   posName = pos.name;
   const data = await loadWeather(pos);
   hourlyData = data.hourly;
