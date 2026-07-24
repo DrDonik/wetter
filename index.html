@@ -219,7 +219,6 @@
     -webkit-tap-highlight-color: transparent;
   }
   .win { cursor: pointer; }
-  #rose { z-index: 11; }
   .we-row {
     display: flex;
     align-items: center;
@@ -248,6 +247,10 @@
     -webkit-tap-highlight-color: transparent;
   }
   .we-seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+  .win:focus-visible,
+  .we-seg button:focus-visible,
+  .we-input:focus-visible,
+  .rose-close:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
   .we-input {
     font: inherit;
     font-size: 1rem;
@@ -257,18 +260,15 @@
     border-radius: 10px;
     padding: 6px 10px;
   }
-  .we-dirbtn {
-    font: inherit;
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--ink);
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 6px 14px;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
+  .we-dir { margin-top: 12px; }
+  .we-dir[hidden] { display: none; }
+  .we-dirlbl {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin-bottom: 2px;
   }
+  #we-rose { max-width: 260px; margin: 0 auto; }
 </style>
 </head>
 <body>
@@ -318,19 +318,11 @@
       <label class="we-lbl" for="we-dur">Dauer</label>
       <select id="we-dur" class="we-input"></select>
     </div>
-    <div class="we-row" id="we-dir-row">
-      <span class="we-lbl">Richtung</span>
-      <button type="button" id="we-dir" class="we-dirbtn">–</button>
+    <div class="we-dir" id="we-dir">
+      <div class="we-dirlbl" id="we-dirlbl">Richtung</div>
+      <div id="we-rose"></div>
     </div>
     <button id="we-close" class="rose-close" type="button" aria-label="Schliessen">✕</button>
-  </div>
-</div>
-
-<div id="rose" class="rose-backdrop" hidden>
-  <div class="rose-card fade" role="dialog" aria-modal="true" aria-label="Fahrtrichtung wählen">
-    <div class="rose-title" id="rose-title">Fahrtrichtung Hinweg</div>
-    <div id="rose-svg"></div>
-    <button id="rose-close" class="rose-close" type="button" aria-label="Schliessen">✕</button>
   </div>
 </div>
 
@@ -372,14 +364,17 @@ function saveOverride(set, idx, patch) {
 }
 
 // Dezimalstunde ⇄ Anzeige/Eingabe
-function fmtTime(h) {
+function splitHM(h) {
   let H = Math.floor(h + 1e-9), M = Math.round((h - H) * 60);
   if (M === 60) { H += 1; M = 0; }
+  return [H, M];
+}
+function fmtTime(h) {
+  const [H, M] = splitHM(h);
   return H + ":" + String(M).padStart(2, "0");
 }
 function toTimeValue(h) {
-  let H = Math.floor(h + 1e-9), M = Math.round((h - H) * 60);
-  if (M === 60) { H += 1; M = 0; }
+  const [H, M] = splitHM(h);
   return String(H).padStart(2, "0") + ":" + String(M).padStart(2, "0");
 }
 function parseTime(v) {
@@ -601,6 +596,7 @@ function renderWindows(h, nowHour, windows) {
     el.className = "win fade" + (past ? " past" : "");
     el.dataset.idx = i;
     el.setAttribute("role", "button");
+    el.tabIndex = 0;
     el.innerHTML =
       '<div><span class="label">' + w.label + '</span>' +
       '<span class="time">' + w.time + '</span>' +
@@ -683,8 +679,9 @@ function renderChart(h, nowHour, windows) {
   document.getElementById("chart").innerHTML = s;
 }
 
-// Windrose-Dialog: 16 anklickbare Sektoren (data-angle = Fahrtrichtung Hinweg),
-// aktueller Sektor dunkel gefüllt. Farben fest (CSS-Variablen wirken nicht in
+// Windrose (im Fenster-Dialog eingebettet): 16 anklickbare Sektoren
+// (data-angle = Fahrtrichtung des Fensters), aktueller Sektor dunkel gefüllt.
+// Farben fest (CSS-Variablen wirken nicht in
 // SVG-Präsentationsattributen).
 function buildRose(heading) {
   const cx = 140, cy = 140, R = 110, lr = 128;
@@ -716,6 +713,7 @@ function buildRose(heading) {
 }
 
 let editingIdx = -1;
+let lastFocused = null;
 
 // Fenster-Dialog: Fortbewegung, Start, Dauer und (bei Velo) Richtung anpassen.
 function openWinEditor(idx) {
@@ -728,9 +726,12 @@ function openWinEditor(idx) {
   buildDurOptions(w.dur);
   updateDirRow(w);
   document.getElementById("win-editor").hidden = false;
+  lastFocused = document.activeElement;
+  document.querySelector("#we-mode button[aria-pressed='true']")?.focus();
 }
 function closeWinEditor() {
   document.getElementById("win-editor").hidden = true;
+  lastFocused?.focus?.();
 }
 function fmtDur(h) {
   const H = Math.floor(h), M = Math.round((h - H) * 60);
@@ -746,24 +747,16 @@ function buildDurOptions(sel) {
   if (!found) html = '<option value="' + sel + '" selected>' + fmtDur(sel) + '</option>' + html;
   document.getElementById("we-dur").innerHTML = html;
 }
+// Richtungsbereich (eingebettete Windrose) im Fenster-Dialog: nur bei Velo.
 function updateDirRow(w) {
-  const row = document.getElementById("we-dir-row");
-  row.hidden = w.mode !== "Velo";
-  if (w.mode === "Velo") document.getElementById("we-dir").textContent = dirLabel(w.heading) + " ▸";
-}
-
-function openRose() {
-  const w = windowsFor(currentSet)[editingIdx];
-  document.getElementById("rose-title").textContent = "Richtung " + w.label + ": " + dirLabel(w.heading);
-  document.getElementById("rose-svg").innerHTML = buildRose(w.heading);
-  document.getElementById("rose").hidden = false;
-}
-function closeRose() {
-  document.getElementById("rose").hidden = true;
+  const box = document.getElementById("we-dir");
+  box.hidden = w.mode !== "Velo";
+  if (w.mode !== "Velo") return;
+  document.getElementById("we-dirlbl").textContent = "Richtung: " + dirLabel(w.heading);
+  document.getElementById("we-rose").innerHTML = buildRose(w.heading);
 }
 function pickHeading(deg) {
   saveOverride(currentSet, editingIdx, { heading: ((deg % 360) + 360) % 360 });
-  closeRose();
   updateDirRow(windowsFor(currentSet)[editingIdx]);
   render();
 }
@@ -936,20 +929,26 @@ document.getElementById("win-editor").addEventListener("click", e => {
     render();
     return;
   }
-  if (e.target.closest("#we-dir")) openRose();
+  const seg = e.target.closest("[data-angle]");
+  if (seg) pickHeading(Number(seg.getAttribute("data-angle")));
 });
 document.getElementById("we-start").addEventListener("change", e => {
+  // Leeres Feld (z. B. via „löschen") nicht als Mitternacht speichern
+  if (!e.target.value) { e.target.value = toTimeValue(windowsFor(currentSet)[editingIdx].start); return; }
   saveOverride(currentSet, editingIdx, { start: parseTime(e.target.value) });
   render();
+});
+// Tastatur: Fenster-Karten mit Enter/Space öffnen, Dialog mit Escape schliessen
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && !document.getElementById("win-editor").hidden) return closeWinEditor();
+  if (e.key === "Enter" || e.key === " ") {
+    const el = e.target.closest?.(".win");
+    if (el) { e.preventDefault(); openWinEditor(Number(el.dataset.idx)); }
+  }
 });
 document.getElementById("we-dur").addEventListener("change", e => {
   saveOverride(currentSet, editingIdx, { dur: Number(e.target.value) });
   render();
-});
-document.getElementById("rose").addEventListener("click", e => {
-  if (e.target === e.currentTarget || e.target.closest("#rose-close")) return closeRose();
-  const seg = e.target.closest("[data-angle]");
-  if (seg) pickHeading(Number(seg.getAttribute("data-angle")));
 });
 
 init();
