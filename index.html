@@ -343,24 +343,51 @@ async function geoIdentify(lat, lon, layer, limit) {
   return (await res.json()).results || [];
 }
 
-// Koordinaten -> Ortsname via geo.admin. Bevorzugt die Ortschaft (feiner, z. B.
-// eingemeindete Namen mit eigener PLZ wie "Matten (St. Stephan)"), sonst die
-// politische Gemeinde. Liefert null, wenn nichts passt oder der Dienst
-// nicht erreichbar ist (Aufrufer zeigt dann die Koordinaten).
+// Koordinaten -> Ortsname via geo.admin (nur Schweiz, erste Stufe des
+// zweistufigen Fallbacks). Bevorzugt die Ortschaft (feiner, z. B. eingemeindete
+// Namen mit eigener PLZ wie "Matten (St. Stephan)"), sonst die politische
+// Gemeinde. Liefert null, wenn nichts passt oder der Dienst nicht erreichbar ist
+// (= vermutlich Ausland → Aufrufer versucht dann den globalen Geocoder).
+// Rückgabe { name, reached }: reached=true, sobald geo.admin geantwortet hat.
+// So kann der Aufrufer "erreicht, aber kein CH-Treffer" (= echtes Ausland) von
+// "Dienst nicht erreichbar" (Ausfall) unterscheiden und bei einem Ausfall nicht
+// fälschlich Ausland cachen.
 async function resolveName(lat, lon) {
+  let reached = false;
   // 1. Ortschaftenverzeichnis: Ortschaftsname im Feld langtext
   try {
     const r = await geoIdentify(lat, lon, "ch.swisstopo-vd.ortschaftenverzeichnis_plz", 1);
-    if (r[0]?.properties?.langtext) return r[0].properties.langtext;
+    reached = true;
+    if (r[0]?.properties?.langtext) return { name: r[0].properties.langtext, reached };
   } catch (e) {}
   // 2. Fallback politische Gemeinde. Der Layer enthält historische Jahresstände,
   // darum den aktuellen herauspicken (limit hoch genug für alle Jahre am Punkt).
   try {
     const r = await geoIdentify(lat, lon, "ch.swisstopo.swissboundaries3d-gemeinde-flaeche.fill", 200);
+    reached = true;
     const cur = r.find(f => f.properties?.is_current_jahr === true);
-    if (cur?.properties?.gemname) return cur.properties.gemname;
+    if (cur?.properties?.gemname) return { name: cur.properties.gemname, reached };
   } catch (e) {}
-  return null;
+  return { name: null, reached };
+}
+
+// Koordinaten -> Ortsname global (zweite Stufe, Ausland) via BigDataCloud.
+// Kein API-Key, CORS-fähig. Bevorzugt die Stadt, sonst die feinere Ortschaft.
+// Liefert null bei Fehler oder ohne brauchbaren Namen (Aufrufer zeigt dann die
+// Koordinaten). Fair Use: nur vom Gerät für dessen aktuelle Position aufrufen —
+// erfüllt, da lat/lon aus getCurrentPosition stammen.
+async function resolveNameGlobal(lat, lon) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    const url = "https://api-bdc.net/data/reverse-geocode-client"
+      + "?latitude=" + lat + "&longitude=" + lon + "&localityLanguage=de";
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) throw new Error("bigdatacloud " + res.status);
+    const d = await res.json();
+    return d.city || d.locality || null;
+  } catch (e) { return null; }
+  finally { clearTimeout(timer); }
 }
 
 function coordName(lat, lon) {
@@ -376,18 +403,33 @@ async function resolveLocation(locate, fresh) {
   if (!locate && cached) return cached;
   const live = await getPos(fresh ? 0 : 600000);
   if (!live) return cached || { ...FALLBACK };
-  const name = await resolveName(live.lat, live.lon);
-  const loc = { lat: live.lat, lon: live.lon, name: name || coordName(live.lat, live.lon) };
+  // Stufe 1 geo.admin (CH): liefert es einen Namen → Schweiz (ch:true →
+  // MeteoSwiss). War es erreichbar, fand aber nichts → echtes Ausland (ch:false →
+  // best_match) und Stufe 2 global (BigDataCloud) für den Namen. War geo.admin
+  // nicht erreichbar (Ausfall), bleibt ch unbestimmt: nicht als Ausland cachen,
+  // Standort galt bisher als CH → Default-Modell MeteoSwiss.
+  const geo = await resolveName(live.lat, live.lon);
+  const loc = { lat: live.lat, lon: live.lon, name: geo.name };
+  if (geo.name) {
+    loc.ch = true;
+  } else {
+    loc.name = await resolveNameGlobal(live.lat, live.lon) || coordName(live.lat, live.lon);
+    if (geo.reached) loc.ch = false;
+  }
   localStorage.setItem("wetterLoc", JSON.stringify(loc));
   return loc;
 }
 
 async function loadWeather(pos) {
+  // In der Schweiz das MeteoSwiss-Modell, im Ausland best_match (Open-Meteo
+  // wählt automatisch das beste lokale Modell). Altbestand ohne ch-Feld gilt als
+  // Schweiz (Standort war bisher immer CH).
+  const model = pos.ch === false ? "best_match" : "meteoswiss_icon_seamless";
   const url = "https://api.open-meteo.com/v1/forecast"
     + "?latitude=" + pos.lat.toFixed(4)
     + "&longitude=" + pos.lon.toFixed(4)
     + "&hourly=apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_direction_10m,is_day"
-    + "&forecast_days=2&timezone=auto&models=meteoswiss_icon_seamless";
+    + "&forecast_days=2&timezone=auto&models=" + model;
   const res = await fetch(url);
   if (!res.ok) throw new Error("API " + res.status);
   return res.json();
