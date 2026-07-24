@@ -367,10 +367,11 @@ async function resolveName(lat, lon) {
 // Koordinaten -> Ortsname global (zweite Stufe, Ausland) via BigDataCloud.
 // Kein API-Key, CORS-fähig. Bevorzugt die Stadt, sonst die feinere Ortschaft.
 // Liefert null bei Fehler oder ohne brauchbaren Namen (Aufrufer zeigt dann die
-// Koordinaten).
+// Koordinaten). Fair Use: nur vom Gerät für dessen aktuelle Position aufrufen —
+// erfüllt, da lat/lon aus getCurrentPosition stammen.
 async function resolveNameGlobal(lat, lon) {
   try {
-    const url = "https://api.bigdatacloud.net/data/reverse-geocode-client"
+    const url = "https://api-bdc.net/data/reverse-geocode-client"
       + "?latitude=" + lat + "&longitude=" + lon + "&localityLanguage=de";
     const res = await fetch(url);
     if (!res.ok) throw new Error("bigdatacloud " + res.status);
