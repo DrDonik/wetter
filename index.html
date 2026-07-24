@@ -106,6 +106,13 @@
     margin-left: 8px;
     vertical-align: 1px;
   }
+  .win button.mode {
+    font-family: inherit;
+    line-height: inherit;
+    background: none;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
   .win .temp {
     grid-row: 1 / 3;
     grid-column: 3;
@@ -168,6 +175,49 @@
     .fade { animation: in 0.35s ease both; }
     @keyframes in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
   }
+  .rose-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(23, 36, 47, 0.45);
+  }
+  .rose-backdrop[hidden] { display: none; }
+  .rose-card {
+    position: relative;
+    width: 100%;
+    max-width: 320px;
+    background: var(--card);
+    border-radius: 18px;
+    padding: 16px 16px 18px;
+    box-shadow: 0 12px 40px rgba(23, 36, 47, 0.25);
+  }
+  .rose-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: center;
+    margin-bottom: 4px;
+  }
+  .rose-close {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    font: inherit;
+    font-size: 1.1rem;
+    line-height: 1;
+    color: var(--muted);
+    background: none;
+    border: none;
+    padding: 4px 6px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
 </style>
 </head>
 <body>
@@ -200,20 +250,51 @@
   <footer id="foot"></footer>
 </main>
 
+<div id="rose" class="rose-backdrop" hidden>
+  <div class="rose-card fade" role="dialog" aria-modal="true" aria-label="Fahrtrichtung Hinweg wählen">
+    <div class="rose-title" id="rose-title">Fahrtrichtung Hinweg</div>
+    <div id="rose-svg"></div>
+    <button id="rose-close" class="rose-close" type="button" aria-label="Schliessen">✕</button>
+  </div>
+</div>
+
 <script>
+// dir: "out" = Hinweg (Fahrtrichtung aus getHeading()), "back" = Rückweg
+// (Gegenrichtung, +180°). Ohne dir wird kein Fahrtwind gerechnet (zu Fuss).
 const WINDOW_SETS = {
   arbeit: [
-    { label: "Hinweg",  mode: "Velo",    hours: [7, 8], time: "7:30–8:00",   from: 7.5,  to: 8,    heading: 45 },
-    { label: "Mittag",  mode: "zu Fuss", hours: [12],   time: "12:00–13:00", from: 12,   to: 13,   heading: null },
-    { label: "Rückweg", mode: "Velo",    hours: [17],   time: "17:00–17:30", from: 17,   to: 17.5, heading: 225 }
+    { label: "Hinweg",  mode: "Velo",    hours: [7, 8], time: "7:30–8:00",   from: 7.5,  to: 8,    dir: "out"  },
+    { label: "Mittag",  mode: "zu Fuss", hours: [12],   time: "12:00–13:00", from: 12,   to: 13    },
+    { label: "Rückweg", mode: "Velo",    hours: [17],   time: "17:00–17:30", from: 17,   to: 17.5, dir: "back" }
   ],
   freizeit: [
-    { label: "Vormittag",   mode: "zu Fuss", hours: [9],  time: "9:00–10:00",  from: 9,  to: 10, heading: null },
-    { label: "Mittag",      mode: "zu Fuss", hours: [12], time: "12:00–13:00", from: 12, to: 13, heading: null },
-    { label: "Nachmittag",  mode: "zu Fuss", hours: [15], time: "15:00–16:00", from: 15, to: 16, heading: null }
+    { label: "Vormittag",   mode: "zu Fuss", hours: [9],  time: "9:00–10:00",  from: 9,  to: 10 },
+    { label: "Mittag",      mode: "zu Fuss", hours: [12], time: "12:00–13:00", from: 12, to: 13 },
+    { label: "Nachmittag",  mode: "zu Fuss", hours: [15], time: "15:00–16:00", from: 15, to: 16 }
   ]
 };
-const RIDE_KMH = 20; // Fahrgeschwindigkeit Velo; heading = Fahrtrichtung (0° = N, 45° = NO, 225° = SW)
+const RIDE_KMH = 20; // Fahrgeschwindigkeit Velo (0° = N, 90° = O, 180° = S, 270° = W)
+
+// Fahrtrichtung Hinweg in Grad, gespeichert; Default NO (45°). Der Rückweg ist
+// die Gegenrichtung. 16-teilige deutsche Windrose (22,5°-Schritte).
+const DIR16 = ["N","NNO","NO","ONO","O","OSO","SO","SSO","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+function getHeading() {
+  const v = Number(localStorage.getItem("wetterHeading"));
+  return Number.isFinite(v) && v >= 0 && v < 360 ? v : 45;
+}
+function setHeading(deg) {
+  localStorage.setItem("wetterHeading", String(((deg % 360) + 360) % 360));
+}
+function dirLabel(deg) {
+  return DIR16[Math.round(deg / 22.5) % 16];
+}
+// Tatsächliche Fahrtrichtung eines Fensters: Hinweg = gespeicherter Winkel,
+// Rückweg = Gegenrichtung. null (kein dir) → kein Fahrtwind.
+function headingFor(w) {
+  if (w.dir == null) return null;
+  const base = getHeading();
+  return w.dir === "back" ? (base + 180) % 360 : base;
+}
 const THUNDER_CODES = [95, 96, 99];
 
 // WMO weather_code -> Symbol + Beschreibung, absteigend nach Schwere geprüft
@@ -334,10 +415,11 @@ function renderWindows(h, nowHour, windows) {
   const box = document.getElementById("windows");
   box.innerHTML = "";
   windows.forEach(w => {
+    const heading = headingFor(w);
     const temps = w.hours.map(i => {
       const t = h.apparent_temperature[i];
-      if (w.heading == null || h.wind_speed_10m?.[i] == null || h.wind_direction_10m?.[i] == null) return t;
-      return rideAdjust(t, h.wind_speed_10m[i], h.wind_direction_10m[i], w.heading);
+      if (heading == null || h.wind_speed_10m?.[i] == null || h.wind_direction_10m?.[i] == null) return t;
+      return rideAdjust(t, h.wind_speed_10m[i], h.wind_direction_10m[i], heading);
     });
     const temp = temps.reduce((a, b) => a + b, 0) / temps.length;
     const prob = Math.max(...w.hours.map(i => h.precipitation_probability[i] ?? 0));
@@ -355,7 +437,10 @@ function renderWindows(h, nowHour, windows) {
     el.innerHTML =
       '<div><span class="label">' + w.label + '</span>' +
       '<span class="time">' + w.time + '</span>' +
-      (w.mode === "Velo" ? '<span class="mode">' + w.mode + '</span>' : '') + '</div>' +
+      (w.mode === "Velo"
+        ? '<button type="button" class="mode mode-dir" data-rose aria-label="Fahrtrichtung wählen">'
+          + w.mode + ' · ' + dirLabel(heading) + '</button>'
+        : '') + '</div>' +
       '<div class="sym" role="img" title="' + symText + '" aria-label="' + symText + '">' + sym + '</div>' +
       '<div class="temp">' + fmt(temp) + '<small>°</small></div>' +
       '<div class="rain' + (wet ? " wet" : "") + '">' + (past ? "vorbei · " : "") + rainText + '</div>';
@@ -430,6 +515,52 @@ function renderChart(h, nowHour, windows) {
 
   s += "</svg>";
   document.getElementById("chart").innerHTML = s;
+}
+
+// Windrose-Dialog: 16 anklickbare Sektoren (data-angle = Fahrtrichtung Hinweg),
+// aktueller Sektor dunkel gefüllt. Farben fest (CSS-Variablen wirken nicht in
+// SVG-Präsentationsattributen).
+function buildRose() {
+  const cx = 140, cy = 140, R = 110, lr = 128;
+  const selIdx = Math.round(getHeading() / 22.5) % 16;
+  const pol = (deg, r) => [cx + r * Math.sin(deg * Math.PI / 180), cy - r * Math.cos(deg * Math.PI / 180)];
+  let s = '<svg viewBox="0 0 280 280" role="group" aria-label="Windrose">';
+  s += '<circle cx="140" cy="140" r="110" fill="none" stroke="#D8E0E7" stroke-width="1"/>';
+  for (let i = 0; i < 16; i++) {
+    const a = i * 22.5;
+    const [x0, y0] = pol(a - 11.25, R);
+    const [x1, y1] = pol(a + 11.25, R);
+    const on = i === selIdx;
+    s += '<path data-angle="' + a + '" style="cursor:pointer" '
+      + 'd="M140 140 L' + x0.toFixed(1) + ' ' + y0.toFixed(1)
+      + ' A110 110 0 0 1 ' + x1.toFixed(1) + ' ' + y1.toFixed(1) + ' Z" '
+      + 'fill="' + (on ? '#17242F' : '#FFFFFF') + '" stroke="#D8E0E7" stroke-width="1"/>';
+  }
+  // Beschriftung der 8 Hauptrichtungen; N/O/S/W kräftiger
+  [[0,"N",1],[45,"NO",0],[90,"O",1],[135,"SO",0],[180,"S",1],[225,"SW",0],[270,"W",1],[315,"NW",0]]
+    .forEach(([a, t, big]) => {
+      const [lx, ly] = pol(a, lr);
+      s += '<text x="' + lx.toFixed(1) + '" y="' + (ly + 4).toFixed(1) + '" text-anchor="middle" '
+        + 'font-size="' + (big ? 15 : 12) + '" font-weight="' + (big ? 700 : 600) + '" '
+        + 'fill="' + (big ? '#17242F' : '#5C6B78') + '">' + t + '</text>';
+    });
+  s += '<circle cx="140" cy="140" r="3" fill="#5C6B78"/>';
+  s += '</svg>';
+  return s;
+}
+
+function openRose() {
+  document.getElementById("rose-title").textContent = "Fahrtrichtung Hinweg: " + dirLabel(getHeading());
+  document.getElementById("rose-svg").innerHTML = buildRose();
+  document.getElementById("rose").hidden = false;
+}
+function closeRose() {
+  document.getElementById("rose").hidden = true;
+}
+function pickHeading(deg) {
+  setHeading(deg);
+  closeRose();
+  render();
 }
 
 let hourlyData = null;
@@ -583,6 +714,14 @@ window.addEventListener("pageshow", e => { if (e.persisted) onResume(); });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) onResume(); });
 document.getElementById("loc").addEventListener("click", e => {
   if (e.target.closest("#locmode")) relocate();
+});
+document.getElementById("windows").addEventListener("click", e => {
+  if (e.target.closest("[data-rose]")) openRose();
+});
+document.getElementById("rose").addEventListener("click", e => {
+  if (e.target === e.currentTarget || e.target.closest("#rose-close")) return closeRose();
+  const seg = e.target.closest("[data-angle]");
+  if (seg) pickHeading(Number(seg.getAttribute("data-angle")));
 });
 
 init();
