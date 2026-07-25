@@ -218,6 +218,57 @@
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
   }
+  .win { cursor: pointer; }
+  .we-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 14px;
+  }
+  .we-row.center { justify-content: center; margin-top: 4px; }
+  .we-row[hidden] { display: none; }
+  .we-lbl { color: var(--muted); font-size: 0.9rem; }
+  .we-seg {
+    display: flex;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .we-seg button {
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--muted);
+    background: var(--card);
+    border: none;
+    padding: 6px 20px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .we-seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+  .win:focus-visible,
+  .we-seg button:focus-visible,
+  .we-input:focus-visible,
+  .rose-close:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .we-input {
+    font: inherit;
+    font-size: 1rem;
+    color: var(--ink);
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 6px 10px;
+  }
+  .we-dir { margin-top: 12px; }
+  .we-dir[hidden] { display: none; }
+  .we-dirlbl {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin-bottom: 2px;
+  }
+  #we-rose { max-width: 260px; margin: 0 auto; }
 </style>
 </head>
 <body>
@@ -250,50 +301,117 @@
   <footer id="foot"></footer>
 </main>
 
-<div id="rose" class="rose-backdrop" hidden>
-  <div class="rose-card fade" role="dialog" aria-modal="true" aria-label="Fahrtrichtung Hinweg wählen">
-    <div class="rose-title" id="rose-title">Fahrtrichtung Hinweg</div>
-    <div id="rose-svg"></div>
-    <button id="rose-close" class="rose-close" type="button" aria-label="Schliessen">✕</button>
+<div id="win-editor" class="rose-backdrop" hidden>
+  <div class="rose-card fade" role="dialog" aria-modal="true" aria-label="Fenster anpassen">
+    <div class="rose-title" id="we-title">Fenster</div>
+    <div class="we-row center">
+      <div class="we-seg" id="we-mode" role="group" aria-label="Fortbewegung">
+        <button type="button" data-mode="Velo">Velo</button>
+        <button type="button" data-mode="zu Fuss">zu Fuss</button>
+      </div>
+    </div>
+    <div class="we-row">
+      <label class="we-lbl" for="we-start">Start</label>
+      <input type="time" id="we-start" step="900" class="we-input">
+    </div>
+    <div class="we-row">
+      <label class="we-lbl" for="we-dur">Dauer</label>
+      <select id="we-dur" class="we-input"></select>
+    </div>
+    <div class="we-dir" id="we-dir">
+      <div class="we-dirlbl" id="we-dirlbl">Richtung</div>
+      <div id="we-rose"></div>
+    </div>
+    <button id="we-close" class="rose-close" type="button" aria-label="Schliessen">✕</button>
   </div>
 </div>
 
 <script>
-// dir: "out" = Hinweg (Fahrtrichtung aus getHeading()), "back" = Rückweg
-// (Gegenrichtung, +180°). Ohne dir wird kein Fahrtwind gerechnet (zu Fuss).
+// Fenster-Vorgaben: Startzeit + Dauer (in Stunden), Fortbewegung und – bei Velo –
+// Fahrtrichtung (heading in Grad, 0° = N, 90° = O …). Der Nutzer kann alle vier
+// pro Fenster im Fenster-Dialog anpassen; die Werte werden als Overrides in
+// localStorage gespeichert. Anzeige-Zeit und Stunden-Auswahl werden abgeleitet.
 const WINDOW_SETS = {
   arbeit: [
-    { label: "Hinweg",  mode: "Velo",    hours: [7, 8], time: "7:30–8:00",   from: 7.5,  to: 8,    dir: "out"  },
-    { label: "Mittag",  mode: "zu Fuss", hours: [12],   time: "12:00–13:00", from: 12,   to: 13    },
-    { label: "Rückweg", mode: "Velo",    hours: [17],   time: "17:00–17:30", from: 17,   to: 17.5, dir: "back" }
+    { label: "Hinweg",  mode: "Velo",    start: 7.5, dur: 0.5, heading: 45  },
+    { label: "Mittag",  mode: "zu Fuss", start: 12,  dur: 1,   heading: 45  },
+    { label: "Rückweg", mode: "Velo",    start: 17,  dur: 0.5, heading: 225 }
   ],
   freizeit: [
-    { label: "Vormittag",   mode: "zu Fuss", hours: [9],  time: "9:00–10:00",  from: 9,  to: 10 },
-    { label: "Mittag",      mode: "zu Fuss", hours: [12], time: "12:00–13:00", from: 12, to: 13 },
-    { label: "Nachmittag",  mode: "zu Fuss", hours: [15], time: "15:00–16:00", from: 15, to: 16 }
+    { label: "Vormittag",  mode: "zu Fuss", start: 9,  dur: 1, heading: 45 },
+    { label: "Mittag",     mode: "zu Fuss", start: 12, dur: 1, heading: 45 },
+    { label: "Nachmittag", mode: "zu Fuss", start: 15, dur: 1, heading: 45 }
   ]
 };
 const RIDE_KMH = 20; // Fahrgeschwindigkeit Velo (0° = N, 90° = O, 180° = S, 270° = W)
 
-// Fahrtrichtung Hinweg in Grad, gespeichert; Default NO (45°). Der Rückweg ist
-// die Gegenrichtung. 16-teilige deutsche Windrose (22,5°-Schritte).
+// 16-teilige deutsche Windrose (22,5°-Schritte).
 const DIR16 = ["N","NNO","NO","ONO","O","OSO","SO","SSO","S","SSW","SW","WSW","W","WNW","NW","NNW"];
-function getHeading() {
-  const v = Number(localStorage.getItem("wetterHeading"));
-  return Number.isFinite(v) && v >= 0 && v < 360 ? v : 45;
-}
-function setHeading(deg) {
-  localStorage.setItem("wetterHeading", String(((deg % 360) + 360) % 360));
-}
 function dirLabel(deg) {
   return DIR16[Math.round(deg / 22.5) % 16];
 }
-// Tatsächliche Fahrtrichtung eines Fensters: Hinweg = gespeicherter Winkel,
-// Rückweg = Gegenrichtung. null (kein dir) → kein Fahrtwind.
+
+// Benutzer-Overrides pro Set/Fenster: { arbeit: [{start,dur,mode,heading}, …], … }
+function getOverrides() {
+  try { return JSON.parse(localStorage.getItem("wetterWindows") || "null") || {}; }
+  catch (e) { return {}; }
+}
+function saveOverride(set, idx, patch) {
+  const all = getOverrides();
+  const arr = all[set] || (all[set] = []);
+  arr[idx] = { ...(arr[idx] || {}), ...patch };
+  localStorage.setItem("wetterWindows", JSON.stringify(all));
+}
+
+// Dezimalstunde ⇄ Anzeige/Eingabe
+function splitHM(h) {
+  let H = Math.floor(h + 1e-9), M = Math.round((h - H) * 60);
+  if (M === 60) { H += 1; M = 0; }
+  return [H, M];
+}
+function fmtTime(h) {
+  const [H, M] = splitHM(h);
+  return H + ":" + String(M).padStart(2, "0");
+}
+function toTimeValue(h) {
+  const [H, M] = splitHM(h);
+  return String(H).padStart(2, "0") + ":" + String(M).padStart(2, "0");
+}
+function parseTime(v) {
+  const [a, b] = String(v).split(":").map(Number);
+  return (a || 0) + (b || 0) / 60;
+}
+// Stundenindizes, die das Fenster [start, end) berührt (für Mittelung von
+// Temperatur/Regen): jede angebrochene Datenstunde [h, h+1).
+function hourIndices(start, end) {
+  const lo = Math.max(0, Math.floor(start));
+  const hi = Math.min(23, Math.max(lo, Math.ceil(end) - 1));
+  const out = [];
+  for (let i = lo; i <= hi; i++) out.push(i);
+  return out;
+}
+// Effektive Fenster eines Sets: Vorgaben mit gespeicherten Overrides gemischt,
+// abgeleitete Felder (time, from/to, hours) berechnet.
+function windowsFor(set) {
+  const ov = getOverrides()[set] || [];
+  return WINDOW_SETS[set].map((w, i) => {
+    const o = ov[i] || {};
+    const start = o.start != null ? o.start : w.start;
+    const dur = o.dur != null ? o.dur : w.dur;
+    const mode = o.mode != null ? o.mode : w.mode;
+    const heading = o.heading != null ? o.heading : w.heading;
+    const end = Math.min(start + dur, 24);
+    return {
+      label: w.label, mode, heading, start, dur,
+      from: start, to: end,
+      time: fmtTime(start) + "–" + fmtTime(end),
+      hours: hourIndices(start, end)
+    };
+  });
+}
+// Fahrtrichtung fürs Fahrtwind-Modell: nur bei Velo, sonst kein Fahrtwind.
 function headingFor(w) {
-  if (w.dir == null) return null;
-  const base = getHeading();
-  return w.dir === "back" ? (base + 180) % 360 : base;
+  return w.mode === "Velo" ? w.heading : null;
 }
 const THUNDER_CODES = [95, 96, 99];
 
@@ -456,7 +574,7 @@ function fmt(n, digits = 0) {
 function renderWindows(h, nowHour, windows) {
   const box = document.getElementById("windows");
   box.innerHTML = "";
-  windows.forEach(w => {
+  windows.forEach((w, i) => {
     const heading = headingFor(w);
     const temps = w.hours.map(i => {
       const t = h.apparent_temperature[i];
@@ -476,12 +594,14 @@ function renderWindows(h, nowHour, windows) {
     const [sym, symText] = weatherSymbol(Math.max(...w.hours.map(i => h.weather_code[i] ?? 0)));
     const el = document.createElement("div");
     el.className = "win fade" + (past ? " past" : "");
+    el.dataset.idx = i;
+    el.setAttribute("role", "button");
+    el.tabIndex = 0;
     el.innerHTML =
       '<div><span class="label">' + w.label + '</span>' +
       '<span class="time">' + w.time + '</span>' +
       (w.mode === "Velo"
-        ? '<button type="button" class="mode mode-dir" data-rose aria-label="Fahrtrichtung wählen">'
-          + w.mode + ' · ' + dirLabel(heading) + '</button>'
+        ? '<span class="mode">Velo · ' + dirLabel(w.heading) + '</span>'
         : '') + '</div>' +
       '<div class="sym" role="img" title="' + symText + '" aria-label="' + symText + '">' + sym + '</div>' +
       '<div class="temp">' + fmt(temp) + '<small>°</small></div>' +
@@ -559,12 +679,13 @@ function renderChart(h, nowHour, windows) {
   document.getElementById("chart").innerHTML = s;
 }
 
-// Windrose-Dialog: 16 anklickbare Sektoren (data-angle = Fahrtrichtung Hinweg),
-// aktueller Sektor dunkel gefüllt. Farben fest (CSS-Variablen wirken nicht in
+// Windrose (im Fenster-Dialog eingebettet): 16 anklickbare Sektoren
+// (data-angle = Fahrtrichtung des Fensters), aktueller Sektor dunkel gefüllt.
+// Farben fest (CSS-Variablen wirken nicht in
 // SVG-Präsentationsattributen).
-function buildRose() {
+function buildRose(heading) {
   const cx = 140, cy = 140, R = 110, lr = 128;
-  const selIdx = Math.round(getHeading() / 22.5) % 16;
+  const selIdx = Math.round(heading / 22.5) % 16;
   const pol = (deg, r) => [cx + r * Math.sin(deg * Math.PI / 180), cy - r * Math.cos(deg * Math.PI / 180)];
   let s = '<svg viewBox="0 0 280 280" role="group" aria-label="Windrose">';
   s += '<circle cx="140" cy="140" r="110" fill="none" stroke="#D8E0E7" stroke-width="1"/>';
@@ -591,17 +712,52 @@ function buildRose() {
   return s;
 }
 
-function openRose() {
-  document.getElementById("rose-title").textContent = "Fahrtrichtung Hinweg: " + dirLabel(getHeading());
-  document.getElementById("rose-svg").innerHTML = buildRose();
-  document.getElementById("rose").hidden = false;
+let editingIdx = -1;
+let lastFocused = null;
+
+// Fenster-Dialog: Fortbewegung, Start, Dauer und (bei Velo) Richtung anpassen.
+function openWinEditor(idx) {
+  editingIdx = idx;
+  const w = windowsFor(currentSet)[idx];
+  document.getElementById("we-title").textContent = w.label;
+  document.querySelectorAll("#we-mode button").forEach(b =>
+    b.setAttribute("aria-pressed", b.dataset.mode === w.mode));
+  document.getElementById("we-start").value = toTimeValue(w.start);
+  buildDurOptions(w.dur);
+  updateDirRow(w);
+  document.getElementById("win-editor").hidden = false;
+  lastFocused = document.activeElement;
+  document.querySelector("#we-mode button[aria-pressed='true']")?.focus();
 }
-function closeRose() {
-  document.getElementById("rose").hidden = true;
+function closeWinEditor() {
+  document.getElementById("win-editor").hidden = true;
+  lastFocused?.focus?.();
+}
+function fmtDur(h) {
+  const H = Math.floor(h), M = Math.round((h - H) * 60);
+  return H + ":" + String(M).padStart(2, "0");
+}
+function buildDurOptions(sel) {
+  let html = "", found = false;
+  for (let d = 0.25; d <= 4.001; d += 0.25) {
+    const on = Math.abs(d - sel) < 0.01;
+    if (on) found = true;
+    html += '<option value="' + d.toFixed(2) + '"' + (on ? " selected" : "") + '>' + fmtDur(d) + '</option>';
+  }
+  if (!found) html = '<option value="' + sel + '" selected>' + fmtDur(sel) + '</option>' + html;
+  document.getElementById("we-dur").innerHTML = html;
+}
+// Richtungsbereich (eingebettete Windrose) im Fenster-Dialog: nur bei Velo.
+function updateDirRow(w) {
+  const box = document.getElementById("we-dir");
+  box.hidden = w.mode !== "Velo";
+  if (w.mode !== "Velo") return;
+  document.getElementById("we-dirlbl").textContent = "Richtung: " + dirLabel(w.heading);
+  document.getElementById("we-rose").innerHTML = buildRose(w.heading);
 }
 function pickHeading(deg) {
-  setHeading(deg);
-  closeRose();
+  saveOverride(currentSet, editingIdx, { heading: ((deg % 360) + 360) % 360 });
+  updateDirRow(windowsFor(currentSet)[editingIdx]);
   render();
 }
 
@@ -657,11 +813,11 @@ function render() {
   document.getElementById("btn-arbeit").setAttribute("aria-pressed", currentSet === "arbeit");
   document.getElementById("btn-freizeit").setAttribute("aria-pressed", currentSet === "freizeit");
   const nowHour = currentDay === 0 ? new Date().getHours() : -1;
-  const windows = WINDOW_SETS[currentSet];
+  const windows = windowsFor(currentSet);
   renderWindows(sliceDay(hourlyData, currentDay), nowHour, windows);
   renderChart(sliceDay(hourlyData, currentDay), nowHour, windows);
   document.getElementById("foot").textContent =
-    (currentSet === "arbeit" ? "VELO: gefühlt inkl. Fahrtwind (" + RIDE_KMH + " km/h) · " : "") +
+    (windows.some(w => w.mode === "Velo") ? "VELO: gefühlt inkl. Fahrtwind (" + RIDE_KMH + " km/h) · " : "") +
     "Daten: Open-Meteo · Stand " + loadedAt;
 }
 
@@ -758,12 +914,41 @@ document.getElementById("loc").addEventListener("click", e => {
   if (e.target.closest("#locmode")) relocate();
 });
 document.getElementById("windows").addEventListener("click", e => {
-  if (e.target.closest("[data-rose]")) openRose();
+  const el = e.target.closest(".win");
+  if (el) openWinEditor(Number(el.dataset.idx));
 });
-document.getElementById("rose").addEventListener("click", e => {
-  if (e.target === e.currentTarget || e.target.closest("#rose-close")) return closeRose();
+document.getElementById("win-editor").addEventListener("click", e => {
+  if (e.target === e.currentTarget || e.target.closest("#we-close")) return closeWinEditor();
+  const modeBtn = e.target.closest("#we-mode button");
+  if (modeBtn) {
+    saveOverride(currentSet, editingIdx, { mode: modeBtn.dataset.mode });
+    const w = windowsFor(currentSet)[editingIdx];
+    document.querySelectorAll("#we-mode button").forEach(b =>
+      b.setAttribute("aria-pressed", b.dataset.mode === w.mode));
+    updateDirRow(w);
+    render();
+    return;
+  }
   const seg = e.target.closest("[data-angle]");
   if (seg) pickHeading(Number(seg.getAttribute("data-angle")));
+});
+document.getElementById("we-start").addEventListener("change", e => {
+  // Leeres Feld (z. B. via „löschen") nicht als Mitternacht speichern
+  if (!e.target.value) { e.target.value = toTimeValue(windowsFor(currentSet)[editingIdx].start); return; }
+  saveOverride(currentSet, editingIdx, { start: parseTime(e.target.value) });
+  render();
+});
+// Tastatur: Fenster-Karten mit Enter/Space öffnen, Dialog mit Escape schliessen
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && !document.getElementById("win-editor").hidden) return closeWinEditor();
+  if (e.key === "Enter" || e.key === " ") {
+    const el = e.target.closest?.(".win");
+    if (el) { e.preventDefault(); openWinEditor(Number(el.dataset.idx)); }
+  }
+});
+document.getElementById("we-dur").addEventListener("change", e => {
+  saveOverride(currentSet, editingIdx, { dur: Number(e.target.value) });
+  render();
 });
 
 init();
