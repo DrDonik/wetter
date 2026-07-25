@@ -504,17 +504,22 @@ function parseTime(v) {
   const [a, b] = String(v).split(":").map(Number);
   return (a || 0) + (b || 0) / 60;
 }
-// Stundenindizes, die das Fenster [start, end) berührt (für Mittelung von
-// Temperatur/Regen): jede angebrochene Datenstunde [h, h+1).
-function hourIndices(start, end) {
+// Datenstunden, die das Fenster [start, end) berührt, je mit ihrem
+// Überlappungsanteil ov (in Stunden). Open-Meteo akkumuliert precipitation pro
+// voller Stunde [i, i+1) — eine bloss angeschnittene Stunde darf deshalb nur
+// anteilig zählen, sonst zeigt ein 30-Minuten-Fenster die Menge einer ganzen
+// Stunde.
+function hourSlices(start, end) {
   const lo = Math.max(0, Math.floor(start));
   const hi = Math.min(23, Math.max(lo, Math.ceil(end) - 1));
   const out = [];
-  for (let i = lo; i <= hi; i++) out.push(i);
+  for (let i = lo; i <= hi; i++) {
+    out.push({ i, ov: Math.max(0, Math.min(end, i + 1) - Math.max(start, i)) });
+  }
   return out;
 }
 // Effektive Fenster eines Sets: gespeicherte Liste mit abgeleiteten Feldern
-// (time, from/to, hours), chronologisch nach Startzeit sortiert.
+// (time, from/to, slices), chronologisch nach Startzeit sortiert.
 function windowsFor(set) {
   return rawSet(set).map(w => {
     const end = Math.min(w.start + w.dur, 24);
@@ -522,7 +527,7 @@ function windowsFor(set) {
       id: w.id, label: w.label, mode: w.mode, heading: w.heading, start: w.start, dur: w.dur,
       from: w.start, to: end,
       time: fmtTime(w.start) + "–" + fmtTime(end),
-      hours: hourIndices(w.start, end)
+      slices: hourSlices(w.start, end)
     };
   }).sort((a, b) => a.start - b.start);
 }
@@ -699,22 +704,33 @@ function renderWindows(h, nowHour, windows) {
   box.innerHTML = "";
   windows.forEach((w, i) => {
     const heading = headingFor(w);
-    const temps = w.hours.map(i => {
-      const t = h.apparent_temperature[i];
-      if (heading == null || h.wind_speed_10m?.[i] == null || h.wind_direction_10m?.[i] == null) return t;
-      return rideAdjust(t, h.wind_speed_10m[i], h.wind_direction_10m[i], heading);
-    });
-    const temp = temps.reduce((a, b) => a + b, 0) / temps.length;
-    const prob = Math.max(...w.hours.map(i => h.precipitation_probability[i] ?? 0));
-    const mm = w.hours.reduce((a, i) => a + (h.precipitation[i] ?? 0), 0);
-    const past = nowHour > Math.max(...w.hours);
-    const thunder = w.hours.some(i => THUNDER_CODES.includes(h.weather_code[i]));
+    // Alle Fenstergrössen werden mit dem Überlappungsanteil gewichtet, damit sie
+    // die Fahrt beschreiben und nicht die berührten Datenstunden.
+    const dur = w.slices.reduce((a, s) => a + s.ov, 0) || 1;
+    const temp = w.slices.reduce((a, s) => {
+      const t = h.apparent_temperature[s.i];
+      const eff = (heading == null || h.wind_speed_10m?.[s.i] == null || h.wind_direction_10m?.[s.i] == null)
+        ? t
+        : rideAdjust(t, h.wind_speed_10m[s.i], h.wind_direction_10m[s.i], heading);
+      return a + eff * s.ov;
+    }, 0) / dur;
+    const mm = w.slices.reduce((a, s) => a + (h.precipitation[s.i] ?? 0) * s.ov, 0);
+    // Wahrscheinlichkeit und Symbol nur aus Stunden, die das Fenster nennenswert
+    // abdecken: ein 10-Minuten-Ausläufer in die Nachbarstunde soll die Kachel
+    // nicht dominieren. Der Fallback greift erst bei sehr langen Fenstern.
+    const rel = w.slices.filter(s => s.ov >= 0.25 * dur);
+    const relevant = rel.length ? rel : w.slices;
+    const prob = Math.max(...relevant.map(s => h.precipitation_probability[s.i] ?? 0));
+    const past = nowHour > Math.max(...w.slices.map(s => s.i));
+    // Gewitter bewusst über alle berührten Stunden: hier ist der Fehlalarm
+    // billiger als der Fehltreffer.
+    const thunder = w.slices.some(s => THUNDER_CODES.includes(h.weather_code[s.i]));
     const wet = prob >= 30 || mm >= 0.2 || thunder;
     let rainText = wet
       ? "Regen " + prob + " % · " + fmt(mm, 1) + " mm"
       : "trocken (" + prob + " %)";
     if (thunder) rainText += " · Gewitter möglich";
-    const [sym, symText] = weatherSymbol(Math.max(...w.hours.map(i => h.weather_code[i] ?? 0)));
+    const [sym, symText] = weatherSymbol(Math.max(...relevant.map(s => h.weather_code[s.i] ?? 0)));
     const el = document.createElement("div");
     el.className = "win fade" + (past ? " past" : "");
     el.dataset.id = w.id;
