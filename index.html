@@ -750,23 +750,65 @@ function renderWindows(h, nowHour, windows) {
   });
 }
 
+// Basis-Zeitraum des Charts. Die Nacht interessiert einen Pendler nicht und würde
+// nur ein Drittel der Breite verbrauchen; der Bereich wächst darum nur, wenn ein
+// Fenster oder die Jetzt-Linie sonst aus dem Bild fiele.
+const CHART_FROM = 6, CHART_TO = 22;
+// Feste Bezugsgrösse der Regenbalken in mm/h: gleiche Balkenhöhe bedeutet damit an
+// jedem Tag dasselbe. 3 mm/h liegt knapp über der Schwelle zu mässigem Regen.
+const RAIN_FULL = 3;
+
+// Textbreite in viewBox-Einheiten (für die Kollisionsprüfung der Fensterlabels,
+// deren Namen frei gewählt sind). Der Chart wird leicht verkleinert dargestellt,
+// darum ein kleiner Sicherheitszuschlag statt exakter Umrechnung.
+let measureCtx = null;
+function textWidth(t, px) {
+  if (!measureCtx) measureCtx = document.createElement("canvas").getContext("2d");
+  measureCtx.font = px + 'px "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif';
+  return measureCtx.measureText(t).width * 1.06;
+}
+
 function renderChart(h, nowHour, windows) {
   const W = 420, H = 192, padL = 30, padR = 8, padT = 56, padB = 22;
-  const temps = h.apparent_temperature.slice(0, 24);
-  const rain = h.precipitation.slice(0, 24).map(v => v ?? 0);
+  const now = nowHour >= 0 ? nowHour + new Date().getMinutes() / 60 : -1;
+  // Dargestellter Zeitraum, auf volle Stunden gerundet: im Normalfall Tag für Tag
+  // derselbe (ruhiges Bild), erweitert nur um Fenster bzw. eine Jetzt-Linie
+  // ausserhalb der Basis. Dadurch liegt garantiert alles Gezeichnete im Plotbereich.
+  let t0 = CHART_FROM, t1 = CHART_TO;
+  windows.forEach(w => {
+    t0 = Math.min(t0, Math.floor(w.from));
+    t1 = Math.max(t1, Math.ceil(w.to));
+  });
+  if (now >= 0) {
+    t0 = Math.min(t0, Math.floor(now));
+    t1 = Math.max(t1, Math.ceil(now));
+  }
+  t0 = Math.max(0, t0);
+  t1 = Math.min(24, t1);
+  // Temperatur ist ein Momentanwert zur vollen Stunde, Niederschlag die Summe über
+  // [i, i+1) — daher die unterschiedlichen Indexbereiche. Für 24:00 gibt es keinen
+  // Temperaturwert mehr, die Kurve endet dann bei 23:00.
+  const hoursT = [], hoursR = [];
+  for (let i = t0; i <= Math.min(t1, 23); i++) hoursT.push(i);
+  for (let i = t0; i <= Math.min(t1 - 1, 23); i++) hoursR.push(i);
+  const temps = hoursT.map(i => h.apparent_temperature[i]);
+  const rain = hoursR.map(i => h.precipitation[i] ?? 0);
   // Achsengrenzen auf Vielfache von 3 gerundet (mit mind. 1° Abstand zur Kurve),
   // damit die 3°-Hilfslinien immer auf mod-3-Zahlen liegen
   const tMin = Math.floor((Math.min(...temps) - 1) / 3) * 3;
   const tMax = Math.ceil((Math.max(...temps) + 1) / 3) * 3;
-  const rMax = Math.max(1.5, ...rain);
-  const x = i => padL + (i / 23) * (W - padL - padR);
+  const rMax = Math.max(RAIN_FULL, ...rain); // nur bei starkem Regen grösser als die feste Skala
+  // Die x-Achse bildet neu die Zeit ab, nicht den Datenindex: t1 liegt exakt auf
+  // dem rechten Rand.
+  const x = t => padL + ((t - t0) / (t1 - t0)) * (W - padL - padR);
   const yT = v => padT + (1 - (v - tMin) / (tMax - tMin)) * (H - padT - padB);
   const yR = v => H - padB - (v / rMax) * (H - padT - padB) * 0.55;
+  const tick0 = Math.ceil(t0 / 3) * 3; // erste 3-Stunden-Marke im Bereich
 
   let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Tagesverlauf gefühlte Temperatur und Regen">';
 
   // Hilfslinien: alle 3 h / 3 °C, Hauptlinien (alle 6) leicht kräftiger
-  for (let hr = 0; hr <= 23; hr += 3) {
+  for (let hr = tick0; hr <= t1; hr += 3) {
     s += '<line x1="' + x(hr) + '" y1="' + padT + '" x2="' + x(hr) + '" y2="' + (H - padB) + '" stroke="#17242F" stroke-width="1" opacity="' + (hr % 6 === 0 ? 0.11 : 0.05) + '"/>';
   }
   for (let v = tMin; v <= tMax; v += 3) {
@@ -774,42 +816,78 @@ function renderChart(h, nowHour, windows) {
   }
 
   // Wetter-Icons alle 3 h am oberen Rand; klar/bewölkt nachts als Mond/Wolke,
-  // da weather_code nicht zwischen Tag und Nacht unterscheidet
-  for (let hr = 0; hr <= 23; hr += 3) {
+  // da weather_code nicht zwischen Tag und Nacht unterscheidet. Die x-Position
+  // wird um höchstens eine halbe Icon-Breite eingerückt, damit ein Icon direkt am
+  // Bereichsrand vollständig sichtbar bleibt.
+  for (let hr = tick0; hr <= Math.min(t1, 23); hr += 3) {
     const code = h.weather_code[hr] ?? 0;
     let [sym, symText] = weatherSymbol(code);
     if (h.is_day?.[hr] === 0 && code <= 2) [sym, symText] = code <= 1 ? ["🌙", "klar"] : ["☁️", "bewölkt"];
-    s += '<text x="' + x(hr) + '" y="30" text-anchor="middle" font-size="28"' + (hr < nowHour ? ' opacity="0.42"' : '') + '><title>' + symText + '</title>' + sym + '</text>';
+    const ix = Math.max(padL + 14, Math.min(W - padR - 14, x(hr)));
+    s += '<text x="' + ix + '" y="30" text-anchor="middle" font-size="28"' + (hr < nowHour ? ' opacity="0.42"' : '') + '><title>' + symText + '</title>' + sym + '</text>';
   }
 
   // Fenster-Zonen (echte Zeitfenster, nicht die Datenstunden)
   windows.forEach(w => {
     const x0 = x(w.from), x1 = x(w.to);
-    s += '<rect x="' + x0 + '" y="' + padT + '" width="' + (x1 - x0) + '" height="' + (H - padT - padB) + '" fill="#17242F" opacity="0.06" rx="4"/>';
-    s += '<text x="' + ((x0 + x1) / 2) + '" y="' + (padT - 4) + '" text-anchor="middle" font-size="9" fill="#5C6B78">' + esc(w.label) + '</text>';
+    s += '<rect x="' + x0 + '" y="' + padT + '" width="' + (x1 - x0) + '" height="' + (H - padT - padB) + '" fill="#17242F" opacity="0.06" rx="4"><title>' + esc(w.label) + ' ' + w.time + '</title></rect>';
   });
 
-  // Regenbalken
-  rain.forEach((v, i) => {
+  // Fensterlabels kollisionsfrei setzen: ein 30-Minuten-Fenster ist schmaler als
+  // sein Name, mehrere Labels würden sonst übereinanderliegen. Vorrang hat das
+  // gerade relevante Fenster (läuft jetzt bzw. das nächste), danach chronologisch;
+  // was nicht ohne Überlappung passt, entfällt. Die Zone bleibt sichtbar und trägt
+  // den Namen als Tooltip.
+  const boxes = windows.map((w, k) => {
+    const bw = textWidth(w.label, 9) + 6;
+    const cx = (x(w.from) + x(w.to)) / 2;
+    const l = Math.max(padL, Math.min(W - padR - bw, cx - bw / 2));
+    return { k, l, r: l + bw };
+  });
+  const act = Math.max(0, windows.findIndex(w => w.to > now));
+  const placed = [];
+  boxes.slice(act, act + 1).concat(boxes.filter(b => b.k !== act)).forEach(b => {
+    if (placed.some(p => b.l < p.r + 3 && p.l < b.r + 3)) return;
+    placed.push(b);
+  });
+  placed.forEach(b => {
+    s += '<text x="' + ((b.l + b.r) / 2) + '" y="' + (padT - 4) + '" text-anchor="middle" font-size="9" fill="#5C6B78">' + esc(windows[b.k].label) + '</text>';
+  });
+
+  // Regenbalken über der Stunde, die sie beschreiben ([i, i+1) statt mittig auf der
+  // Stundenmarke) — so decken sie sich mit den Fensterzonen.
+  rain.forEach((v, k) => {
     if (v <= 0) return;
-    const bw = (W - padL - padR) / 24 - 2;
-    s += '<rect x="' + (x(i) - bw / 2) + '" y="' + yR(v) + '" width="' + bw + '" height="' + (H - padB - yR(v)) + '" fill="#2563C4" opacity="0.75" rx="2"/>';
+    const x0 = x(hoursR[k]) + 1, x1 = x(hoursR[k] + 1) - 1;
+    s += '<rect x="' + x0 + '" y="' + yR(v) + '" width="' + (x1 - x0) + '" height="' + (H - padB - yR(v)) + '" fill="#2563C4" opacity="0.75" rx="2"/>';
   });
 
   // Temperaturkurve
-  const path = temps.map((v, i) => (i ? "L" : "M") + x(i).toFixed(1) + " " + yT(v).toFixed(1)).join(" ");
+  const path = temps.map((v, k) => (k ? "L" : "M") + x(hoursT[k]).toFixed(1) + " " + yT(v).toFixed(1)).join(" ");
   s += '<path d="' + path + '" fill="none" stroke="#D9662E" stroke-width="2.5" stroke-linecap="round"/>';
 
+  // Spitzenwert des Regens anschreiben: ohne diese eine Zahl hat die Balkenhöhe
+  // keinen ablesbaren Massstab. Weisse Kontur, damit sie auch über der
+  // Temperaturkurve lesbar bleibt.
+  const peak = Math.max(0, ...rain);
+  if (peak > 0) {
+    const pk = rain.indexOf(peak);
+    const txt = fmt(peak, 1) + " mm/h";
+    const bw = textWidth(txt, 9);
+    const cx = Math.max(padL + bw / 2, Math.min(W - padR - bw / 2, (x(hoursR[pk]) + x(hoursR[pk] + 1)) / 2));
+    s += '<text x="' + cx + '" y="' + (yR(peak) - 4) + '" text-anchor="middle" font-size="9" fill="#2563C4" stroke="#FFFFFF" stroke-width="2.5" paint-order="stroke">' + txt + '</text>';
+  }
+
   // Jetzt-Linie
-  if (nowHour >= 0 && nowHour < 24) {
-    const nx = x(nowHour + new Date().getMinutes() / 60);
+  if (now >= 0) {
+    const nx = x(now);
     s += '<line x1="' + nx + '" y1="' + padT + '" x2="' + nx + '" y2="' + (H - padB) + '" stroke="#17242F" stroke-width="1" stroke-dasharray="3 3" opacity="0.5"/>';
   }
 
-  // Achsen-Labels
-  [0, 6, 12, 18, 23].forEach(hr => {
+  // Achsen-Labels an denselben 3-Stunden-Marken wie die Hilfslinien
+  for (let hr = tick0; hr <= t1; hr += 3) {
     s += '<text x="' + x(hr) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="9" fill="#5C6B78">' + hr + '</text>';
-  });
+  }
   // Temperaturachse alle 6° angeschrieben (gleiche Major-Ticks wie die Zeitachse)
   for (let v = Math.ceil(tMin / 6) * 6; v <= tMax; v += 6) {
     s += '<text x="2" y="' + (yT(v) + 3) + '" font-size="9" fill="#5C6B78">' + v + '°</text>';
