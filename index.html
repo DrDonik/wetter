@@ -73,6 +73,7 @@
   }
   .windows { display: flex; flex-direction: column; gap: 10px; }
   .win {
+    position: relative;
     background: var(--card);
     border: 1px solid var(--line);
     border-radius: 14px;
@@ -83,6 +84,23 @@
     column-gap: 12px;
     align-items: baseline;
   }
+  .win-close {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    z-index: 1;
+    font: inherit;
+    font-size: 0.85rem;
+    line-height: 1;
+    color: var(--muted);
+    background: none;
+    border: none;
+    padding: 3px 6px;
+    cursor: pointer;
+    opacity: 0.55;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .win-close:hover { opacity: 1; }
   .win .sym {
     grid-row: 1 / 3;
     grid-column: 2;
@@ -130,6 +148,22 @@
     font-variant-numeric: tabular-nums;
   }
   .win .rain.wet { color: var(--rain); font-weight: 600; }
+  .addwin {
+    display: block;
+    margin: 12px auto 0;
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    border: 1.5px dashed var(--line);
+    background: var(--card);
+    color: var(--muted);
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .addwin:hover { border-color: var(--muted); color: var(--ink); }
+  .addwin:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
   .chart-card {
     background: var(--card);
     border: 1px solid var(--line);
@@ -269,6 +303,22 @@
     margin-bottom: 2px;
   }
   #we-rose { max-width: 260px; margin: 0 auto; }
+  .we-name {
+    display: block;
+    width: 100%;
+    font: inherit;
+    font-size: 1rem;
+    font-weight: 600;
+    text-align: center;
+    color: var(--ink);
+    background: none;
+    border: none;
+    border-bottom: 1px dotted var(--line);
+    padding: 2px 26px 5px;
+    margin-bottom: 6px;
+  }
+  .we-name::placeholder { color: var(--muted); font-weight: 400; }
+  .we-name:focus-visible { outline: none; border-bottom-color: var(--ink); }
 </style>
 </head>
 <body>
@@ -290,6 +340,7 @@
 <div id="status">Lade Wetterdaten …</div>
 <main id="app" hidden>
   <div class="windows" id="windows"></div>
+  <button type="button" id="addwin" class="addwin" aria-label="Zeitfenster hinzufügen">+</button>
   <div class="chart-card fade">
     <div class="chart-title">Tagesverlauf</div>
     <div id="chart"></div>
@@ -303,7 +354,7 @@
 
 <div id="win-editor" class="rose-backdrop" hidden>
   <div class="rose-card fade" role="dialog" aria-modal="true" aria-label="Fenster anpassen">
-    <div class="rose-title" id="we-title">Fenster</div>
+    <input type="text" id="we-name" class="we-name" maxlength="24" autocomplete="off" aria-label="Name des Fensters" placeholder="Fenster">
     <div class="we-row center">
       <div class="we-seg" id="we-mode" role="group" aria-label="Fortbewegung">
         <button type="button" data-mode="Velo">Velo</button>
@@ -351,16 +402,85 @@ function dirLabel(deg) {
   return DIR16[Math.round(deg / 22.5) % 16];
 }
 
-// Benutzer-Overrides pro Set/Fenster: { arbeit: [{start,dur,mode,heading}, …], … }
-function getOverrides() {
+// Fenster sind vollständig benutzerverwaltet: pro Set eine Liste kompletter
+// Fenster-Objekte { id, label, start, dur, mode, heading } in localStorage.
+// WINDOW_SETS dient nur noch als Startvorlage (Seeding beim Erststart bzw. wenn
+// ein Set noch nie gespeichert wurde). Alte, indexbasierte Overrides werden
+// einmalig verlustfrei ins neue Format migriert. Eine leere Liste ist ein
+// gültiger Zustand (alle Fenster entfernt) und wird nicht neu geseedet.
+function getStore() {
   try { return JSON.parse(localStorage.getItem("wetterWindows") || "null") || {}; }
   catch (e) { return {}; }
 }
-function saveOverride(set, idx, patch) {
-  const all = getOverrides();
-  const arr = all[set] || (all[set] = []);
-  arr[idx] = { ...(arr[idx] || {}), ...patch };
-  localStorage.setItem("wetterWindows", JSON.stringify(all));
+function saveStore(store) {
+  localStorage.setItem("wetterWindows", JSON.stringify(store));
+}
+let winSeq = 0;
+function newId() {
+  return "w" + Date.now().toString(36) + "-" + (winSeq++).toString(36);
+}
+// Vollständige Fensterliste aus der Vorlage bauen, optional mit alten Overrides
+// (ov[i] = { start?, dur?, mode?, heading? }) überlagert. Ohne ov = reines Seed.
+function buildFromTemplate(set, ov) {
+  ov = ov || [];
+  return WINDOW_SETS[set].map((w, i) => {
+    const o = ov[i] || {};
+    return {
+      id: newId(),
+      label: w.label,
+      start: o.start != null ? o.start : w.start,
+      dur: o.dur != null ? o.dur : w.dur,
+      mode: o.mode != null ? o.mode : w.mode,
+      heading: o.heading != null ? o.heading : w.heading
+    };
+  });
+}
+// Gespeicherte Rohliste eines Sets, bei Bedarf geseedet/migriert und persistiert.
+function rawSet(set) {
+  const store = getStore();
+  let arr = store[set];
+  if (!Array.isArray(arr)) {
+    arr = buildFromTemplate(set);            // nichts gespeichert → Vorlage
+  } else if (arr.some(w => w && w.id == null)) {
+    arr = buildFromTemplate(set, arr);       // altes Override-Format → migrieren
+  } else {
+    return arr.filter(Boolean);              // neues Format, unverändert
+  }
+  store[set] = arr;
+  saveStore(store);
+  return arr;
+}
+function updateWindow(set, id, patch) {
+  rawSet(set);
+  const store = getStore();
+  const w = (store[set] || []).find(x => x && x.id === id);
+  if (w) { Object.assign(w, patch); saveStore(store); }
+}
+function removeWindow(set, id) {
+  rawSet(set);
+  const store = getStore();
+  if (Array.isArray(store[set])) {
+    store[set] = store[set].filter(x => x && x.id !== id);
+    saveStore(store);
+  }
+}
+// Neues Fenster ans Ende der Liste; Startwerte vom spätesten Fenster abgeleitet
+// (Modus/Richtung übernommen, Start = dessen Ende). Gibt die neue id zurück.
+function addWindow(set) {
+  const arr = rawSet(set).slice();
+  const last = arr.slice().sort((a, b) => a.start - b.start).pop();
+  const w = {
+    id: newId(),
+    label: "Fenster",
+    start: last ? Math.min(last.start + last.dur, 23.5) : 8,
+    dur: 0.5,
+    mode: last ? last.mode : "Velo",
+    heading: last ? last.heading : 45
+  };
+  const store = getStore();
+  store[set] = arr.concat(w);
+  saveStore(store);
+  return w.id;
 }
 
 // Dezimalstunde ⇄ Anzeige/Eingabe
@@ -390,24 +510,18 @@ function hourIndices(start, end) {
   for (let i = lo; i <= hi; i++) out.push(i);
   return out;
 }
-// Effektive Fenster eines Sets: Vorgaben mit gespeicherten Overrides gemischt,
-// abgeleitete Felder (time, from/to, hours) berechnet.
+// Effektive Fenster eines Sets: gespeicherte Liste mit abgeleiteten Feldern
+// (time, from/to, hours), chronologisch nach Startzeit sortiert.
 function windowsFor(set) {
-  const ov = getOverrides()[set] || [];
-  return WINDOW_SETS[set].map((w, i) => {
-    const o = ov[i] || {};
-    const start = o.start != null ? o.start : w.start;
-    const dur = o.dur != null ? o.dur : w.dur;
-    const mode = o.mode != null ? o.mode : w.mode;
-    const heading = o.heading != null ? o.heading : w.heading;
-    const end = Math.min(start + dur, 24);
+  return rawSet(set).map(w => {
+    const end = Math.min(w.start + w.dur, 24);
     return {
-      label: w.label, mode, heading, start, dur,
-      from: start, to: end,
-      time: fmtTime(start) + "–" + fmtTime(end),
-      hours: hourIndices(start, end)
+      id: w.id, label: w.label, mode: w.mode, heading: w.heading, start: w.start, dur: w.dur,
+      from: w.start, to: end,
+      time: fmtTime(w.start) + "–" + fmtTime(end),
+      hours: hourIndices(w.start, end)
     };
-  });
+  }).sort((a, b) => a.start - b.start);
 }
 // Fahrtrichtung fürs Fahrtwind-Modell: nur bei Velo, sonst kein Fahrtwind.
 function headingFor(w) {
@@ -571,6 +685,12 @@ function fmt(n, digits = 0) {
   return n.toLocaleString("de-CH", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
+// Nutzer-Eingaben (Fenster-Namen) landen in innerHTML/SVG → escapen.
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
 function renderWindows(h, nowHour, windows) {
   const box = document.getElementById("windows");
   box.innerHTML = "";
@@ -594,11 +714,12 @@ function renderWindows(h, nowHour, windows) {
     const [sym, symText] = weatherSymbol(Math.max(...w.hours.map(i => h.weather_code[i] ?? 0)));
     const el = document.createElement("div");
     el.className = "win fade" + (past ? " past" : "");
-    el.dataset.idx = i;
+    el.dataset.id = w.id;
     el.setAttribute("role", "button");
     el.tabIndex = 0;
     el.innerHTML =
-      '<div><span class="label">' + w.label + '</span>' +
+      '<button class="win-close" type="button" aria-label="Fenster entfernen">✕</button>' +
+      '<div><span class="label">' + esc(w.label) + '</span>' +
       '<span class="time">' + w.time + '</span>' +
       (w.mode === "Velo"
         ? '<span class="mode">Velo · ' + dirLabel(w.heading) + '</span>'
@@ -646,7 +767,7 @@ function renderChart(h, nowHour, windows) {
   windows.forEach(w => {
     const x0 = x(w.from), x1 = x(w.to);
     s += '<rect x="' + x0 + '" y="' + padT + '" width="' + (x1 - x0) + '" height="' + (H - padT - padB) + '" fill="#17242F" opacity="0.06" rx="4"/>';
-    s += '<text x="' + ((x0 + x1) / 2) + '" y="' + (padT - 4) + '" text-anchor="middle" font-size="9" fill="#5C6B78">' + w.label + '</text>';
+    s += '<text x="' + ((x0 + x1) / 2) + '" y="' + (padT - 4) + '" text-anchor="middle" font-size="9" fill="#5C6B78">' + esc(w.label) + '</text>';
   });
 
   // Regenbalken
@@ -712,14 +833,15 @@ function buildRose(heading) {
   return s;
 }
 
-let editingIdx = -1;
+let editingId = null;
 let lastFocused = null;
 
-// Fenster-Dialog: Fortbewegung, Start, Dauer und (bei Velo) Richtung anpassen.
-function openWinEditor(idx) {
-  editingIdx = idx;
-  const w = windowsFor(currentSet)[idx];
-  document.getElementById("we-title").textContent = w.label;
+// Fenster-Dialog: Name, Fortbewegung, Start, Dauer und (bei Velo) Richtung anpassen.
+function openWinEditor(id) {
+  editingId = id;
+  const w = windowsFor(currentSet).find(x => x.id === id);
+  if (!w) return;
+  document.getElementById("we-name").value = w.label;
   document.querySelectorAll("#we-mode button").forEach(b =>
     b.setAttribute("aria-pressed", b.dataset.mode === w.mode));
   document.getElementById("we-start").value = toTimeValue(w.start);
@@ -756,8 +878,8 @@ function updateDirRow(w) {
   document.getElementById("we-rose").innerHTML = buildRose(w.heading);
 }
 function pickHeading(deg) {
-  saveOverride(currentSet, editingIdx, { heading: ((deg % 360) + 360) % 360 });
-  updateDirRow(windowsFor(currentSet)[editingIdx]);
+  updateWindow(currentSet, editingId, { heading: ((deg % 360) + 360) % 360 });
+  updateDirRow(windowsFor(currentSet).find(x => x.id === editingId));
   render();
 }
 
@@ -914,15 +1036,26 @@ document.getElementById("loc").addEventListener("click", e => {
   if (e.target.closest("#locmode")) relocate();
 });
 document.getElementById("windows").addEventListener("click", e => {
+  const closeBtn = e.target.closest(".win-close");
+  if (closeBtn) {
+    removeWindow(currentSet, closeBtn.closest(".win").dataset.id);
+    render();
+    return;
+  }
   const el = e.target.closest(".win");
-  if (el) openWinEditor(Number(el.dataset.idx));
+  if (el) openWinEditor(el.dataset.id);
+});
+document.getElementById("addwin").addEventListener("click", () => {
+  const id = addWindow(currentSet);
+  render();
+  openWinEditor(id);
 });
 document.getElementById("win-editor").addEventListener("click", e => {
   if (e.target === e.currentTarget || e.target.closest("#we-close")) return closeWinEditor();
   const modeBtn = e.target.closest("#we-mode button");
   if (modeBtn) {
-    saveOverride(currentSet, editingIdx, { mode: modeBtn.dataset.mode });
-    const w = windowsFor(currentSet)[editingIdx];
+    updateWindow(currentSet, editingId, { mode: modeBtn.dataset.mode });
+    const w = windowsFor(currentSet).find(x => x.id === editingId);
     document.querySelectorAll("#we-mode button").forEach(b =>
       b.setAttribute("aria-pressed", b.dataset.mode === w.mode));
     updateDirRow(w);
@@ -934,20 +1067,33 @@ document.getElementById("win-editor").addEventListener("click", e => {
 });
 document.getElementById("we-start").addEventListener("change", e => {
   // Leeres Feld (z. B. via „löschen") nicht als Mitternacht speichern
-  if (!e.target.value) { e.target.value = toTimeValue(windowsFor(currentSet)[editingIdx].start); return; }
-  saveOverride(currentSet, editingIdx, { start: parseTime(e.target.value) });
+  if (!e.target.value) { e.target.value = toTimeValue(windowsFor(currentSet).find(x => x.id === editingId).start); return; }
+  updateWindow(currentSet, editingId, { start: parseTime(e.target.value) });
   render();
+});
+// Name live speichern; beim Verlassen leeres Feld auf Standard zurücksetzen.
+document.getElementById("we-name").addEventListener("input", e => {
+  updateWindow(currentSet, editingId, { label: e.target.value });
+  render();
+});
+document.getElementById("we-name").addEventListener("change", e => {
+  if (!e.target.value.trim()) {
+    e.target.value = "Fenster";
+    updateWindow(currentSet, editingId, { label: "Fenster" });
+    render();
+  }
 });
 // Tastatur: Fenster-Karten mit Enter/Space öffnen, Dialog mit Escape schliessen
 document.addEventListener("keydown", e => {
   if (e.key === "Escape" && !document.getElementById("win-editor").hidden) return closeWinEditor();
   if (e.key === "Enter" || e.key === " ") {
+    // Nur die Karte selbst öffnet den Dialog; der ✕-Knopf feuert seinen eigenen Klick
     const el = e.target.closest?.(".win");
-    if (el) { e.preventDefault(); openWinEditor(Number(el.dataset.idx)); }
+    if (el && e.target === el) { e.preventDefault(); openWinEditor(el.dataset.id); }
   }
 });
 document.getElementById("we-dur").addEventListener("change", e => {
-  saveOverride(currentSet, editingIdx, { dur: Number(e.target.value) });
+  updateWindow(currentSet, editingId, { dur: Number(e.target.value) });
   render();
 });
 
