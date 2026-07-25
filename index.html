@@ -788,15 +788,21 @@ function renderChart(h, nowHour, windows) {
   // Temperatur ist ein Momentanwert zur vollen Stunde, Niederschlag die Summe über
   // [i, i+1) — daher die unterschiedlichen Indexbereiche. Für 24:00 gibt es keinen
   // Temperaturwert mehr, die Kurve endet dann bei 23:00.
-  const hoursT = [], hoursR = [];
-  for (let i = t0; i <= Math.min(t1, 23); i++) hoursT.push(i);
+  // Einzelne Stunden können in der Vorhersage fehlen (null). Solche Punkte werden
+  // übersprungen — sonst würde eine Lücke die Achsengrenzen zu NaN machen und den
+  // ganzen Chart unbrauchbar, statt nur einen Punkt zu kosten.
+  const tPts = [], hoursR = [];
+  for (let i = t0; i <= Math.min(t1, 23); i++) {
+    if (h.apparent_temperature[i] != null) tPts.push([i, h.apparent_temperature[i]]);
+  }
   for (let i = t0; i <= Math.min(t1 - 1, 23); i++) hoursR.push(i);
-  const temps = hoursT.map(i => h.apparent_temperature[i]);
+  const temps = tPts.map(p => p[1]);
   const rain = hoursR.map(i => h.precipitation[i] ?? 0);
   // Achsengrenzen auf Vielfache von 3 gerundet (mit mind. 1° Abstand zur Kurve),
-  // damit die 3°-Hilfslinien immer auf mod-3-Zahlen liegen
-  const tMin = Math.floor((Math.min(...temps) - 1) / 3) * 3;
-  const tMax = Math.ceil((Math.max(...temps) + 1) / 3) * 3;
+  // damit die 3°-Hilfslinien immer auf mod-3-Zahlen liegen. Ohne einen einzigen
+  // Temperaturwert bleibt eine neutrale Skala, damit Regen und Fenster lesbar sind.
+  const tMin = temps.length ? Math.floor((Math.min(...temps) - 1) / 3) * 3 : 0;
+  const tMax = temps.length ? Math.ceil((Math.max(...temps) + 1) / 3) * 3 : 12;
   const rMax = Math.max(RAIN_FULL, ...rain); // nur bei starkem Regen grösser als die feste Skala
   // Die x-Achse bildet neu die Zeit ab, nicht den Datenindex: t1 liegt exakt auf
   // dem rechten Rand.
@@ -863,8 +869,10 @@ function renderChart(h, nowHour, windows) {
   });
 
   // Temperaturkurve
-  const path = temps.map((v, k) => (k ? "L" : "M") + x(hoursT[k]).toFixed(1) + " " + yT(v).toFixed(1)).join(" ");
-  s += '<path d="' + path + '" fill="none" stroke="#D9662E" stroke-width="2.5" stroke-linecap="round"/>';
+  if (tPts.length) {
+    const path = tPts.map(([i, v], k) => (k ? "L" : "M") + x(i).toFixed(1) + " " + yT(v).toFixed(1)).join(" ");
+    s += '<path d="' + path + '" fill="none" stroke="#D9662E" stroke-width="2.5" stroke-linecap="round"/>';
+  }
 
   // Spitzenwert des Regens anschreiben: ohne diese eine Zahl hat die Balkenhöhe
   // keinen ablesbaren Massstab. Weisse Kontur, damit sie auch über der
