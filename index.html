@@ -78,11 +78,14 @@
     border: 1px solid var(--line);
     border-radius: 14px;
     padding: 14px 16px;
+  }
+  .win-body {
     display: grid;
     grid-template-columns: 1fr auto auto;
     grid-template-rows: auto auto;
     column-gap: 12px;
     align-items: baseline;
+    cursor: pointer;
   }
   .win-close {
     position: absolute;
@@ -252,7 +255,6 @@
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
   }
-  .win { cursor: pointer; }
   .we-row {
     display: flex;
     align-items: center;
@@ -281,7 +283,8 @@
     -webkit-tap-highlight-color: transparent;
   }
   .we-seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
-  .win:focus-visible,
+  .win-body:focus-visible,
+  .win-close:focus-visible,
   .we-seg button:focus-visible,
   .we-input:focus-visible,
   .rose-close:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
@@ -687,8 +690,8 @@ function fmt(n, digits = 0) {
 
 // Nutzer-Eingaben (Fenster-Namen) landen in innerHTML/SVG → escapen.
 function esc(s) {
-  return String(s).replace(/[&<>"]/g, c =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
 function renderWindows(h, nowHour, windows) {
@@ -715,10 +718,9 @@ function renderWindows(h, nowHour, windows) {
     const el = document.createElement("div");
     el.className = "win fade" + (past ? " past" : "");
     el.dataset.id = w.id;
-    el.setAttribute("role", "button");
-    el.tabIndex = 0;
     el.innerHTML =
       '<button class="win-close" type="button" aria-label="Fenster entfernen">✕</button>' +
+      '<div class="win-body" role="button" tabindex="0" aria-label="' + esc(w.label) + ' anpassen">' +
       '<div><span class="label">' + esc(w.label) + '</span>' +
       '<span class="time">' + w.time + '</span>' +
       (w.mode === "Velo"
@@ -726,7 +728,8 @@ function renderWindows(h, nowHour, windows) {
         : '') + '</div>' +
       '<div class="sym" role="img" title="' + symText + '" aria-label="' + symText + '">' + sym + '</div>' +
       '<div class="temp">' + fmt(temp) + '<small>°</small></div>' +
-      '<div class="rain' + (wet ? " wet" : "") + '">' + (past ? "vorbei · " : "") + rainText + '</div>';
+      '<div class="rain' + (wet ? " wet" : "") + '">' + (past ? "vorbei · " : "") + rainText + '</div>' +
+      '</div>';
     box.appendChild(el);
   });
 }
@@ -1067,7 +1070,11 @@ document.getElementById("win-editor").addEventListener("click", e => {
 });
 document.getElementById("we-start").addEventListener("change", e => {
   // Leeres Feld (z. B. via „löschen") nicht als Mitternacht speichern
-  if (!e.target.value) { e.target.value = toTimeValue(windowsFor(currentSet).find(x => x.id === editingId).start); return; }
+  if (!e.target.value) {
+    const cur = windowsFor(currentSet).find(x => x.id === editingId);
+    if (cur) e.target.value = toTimeValue(cur.start);
+    return;
+  }
   updateWindow(currentSet, editingId, { start: parseTime(e.target.value) });
   render();
 });
@@ -1087,9 +1094,8 @@ document.getElementById("we-name").addEventListener("change", e => {
 document.addEventListener("keydown", e => {
   if (e.key === "Escape" && !document.getElementById("win-editor").hidden) return closeWinEditor();
   if (e.key === "Enter" || e.key === " ") {
-    // Nur die Karte selbst öffnet den Dialog; der ✕-Knopf feuert seinen eigenen Klick
-    const el = e.target.closest?.(".win");
-    if (el && e.target === el) { e.preventDefault(); openWinEditor(el.dataset.id); }
+    const body = e.target.closest?.(".win-body");
+    if (body) { e.preventDefault(); openWinEditor(body.closest(".win").dataset.id); }
   }
 });
 document.getElementById("we-dur").addEventListener("change", e => {
