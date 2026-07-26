@@ -108,13 +108,6 @@
     margin-left: 8px;
     vertical-align: 1px;
   }
-  .win button.mode {
-    font-family: inherit;
-    line-height: inherit;
-    background: none;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-  }
   .win .temp {
     grid-row: 1 / 3;
     grid-column: 3;
@@ -1037,7 +1030,7 @@ function render() {
   d.setDate(d.getDate() + currentDay);
   const dateStr = d.toLocaleDateString("de-CH", { weekday: "long", day: "numeric", month: "long" });
   document.getElementById("loc").innerHTML =
-    '<button type="button" id="locmode" class="locmode">' + posName + '</button> · ' + dateStr;
+    '<button type="button" id="locmode" class="locmode">' + esc(posName) + '</button> · ' + dateStr;
   document.getElementById("btn-today").setAttribute("aria-pressed", currentDay === 0);
   document.getElementById("btn-tomorrow").setAttribute("aria-pressed", currentDay === 1);
   document.getElementById("btn-arbeit").setAttribute("aria-pressed", currentSet === "arbeit");
