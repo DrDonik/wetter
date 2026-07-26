@@ -514,12 +514,16 @@ const BANDS = [
 // Reihenfolge von BANDS (warm → kalt). Das unterste Band hat keine Schwelle und
 // steht deshalb nicht im Speicher. Passt die Länge nicht (BANDS im File geändert),
 // gilt wieder die Vorlage — bei einer persönlichen App ist das billiger als eine
-// Migration und verliert nur vier Zahlen.
+// Migration und verliert nur vier Zahlen. Geprüft wird auch die absteigende
+// Reihenfolge: darauf beruht die Bandwahl (erstes passendes Band gewinnt), und ein
+// von Hand verdrehter Eintrag würde sonst stillschweigend das falsche Band liefern.
 function getThresholds() {
   const def = BANDS.slice(0, -1).map(b => b.min);
   try {
     const a = JSON.parse(localStorage.getItem("wetterBands") || "null");
-    if (Array.isArray(a) && a.length === def.length && a.every(n => typeof n === "number" && isFinite(n))) return a;
+    if (Array.isArray(a) && a.length === def.length
+      && a.every(n => typeof n === "number" && isFinite(n))
+      && a.every((n, i) => i === 0 || n < a[i - 1])) return a;
   } catch (e) { /* defekter Eintrag → Vorlage */ }
   return def;
 }
@@ -907,14 +911,15 @@ function renderAdvice(h, windows) {
   // Ohne Fenster gibt es keine Empfehlung — und damit auch nichts zu justieren:
   // die Zeile ist weg, der Dialog folglich nicht erreichbar.
   adviceBasis = ms.length ? { coldest: Math.min(...ms.map(m => m.temp)), wet: ms.some(m => m.wet) } : null;
+  // Läuft im Hintergrund ein Reload, während der Dialog offen ist, zeigt er sonst
+  // das kälteste Fenster von vorhin. Vor dem Ausstieg, damit das auch für den
+  // fensterlosen Fall gilt und die Synchronisierung an keiner Bedingung hängt.
+  if (!document.getElementById("band-editor").hidden) syncBandRows();
   if (!ms.length) return;
   const band = bands().find(b => adviceBasis.coldest >= b.min);
   el.innerHTML = (adviceBasis.wet ? band.wet : band.dry)
     + (ms.some(m => m.sunny) ? ", Sonnenbrille" : "")
     + (ms.some(m => m.thunder) ? '<span class="thunder"> · Gewitter möglich</span>' : "");
-  // Läuft im Hintergrund ein Reload, während der Dialog offen ist, zeigt er sonst
-  // das kälteste Fenster von vorhin.
-  if (!document.getElementById("band-editor").hidden) syncBandRows();
 }
 
 function renderWindows(h, now, windows) {
