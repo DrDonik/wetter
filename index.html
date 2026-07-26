@@ -2,9 +2,26 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- viewport-fit=cover: im Standalone-Modus reicht die Seite bis unter Notch und
+     Home-Indicator, die Abstände holt das body-Padding aus env(safe-area-inset-*). -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Wetter</title>
+<!-- Vom Homescreen gestartet läuft die App ohne Browser-Leiste. Status-Bar-Stil
+     bewusst „default": iOS färbt die Leiste nach theme-color und wählt die
+     Textfarbe passend, was in beiden Farbschemata funktioniert. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Wetter">
+<meta name="theme-color" content="#EDF1F5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#10161B" media="(prefers-color-scheme: dark)">
+<!-- Icon als Data-URI, damit die App eine einzelne Datei bleibt. Hell auf dunkel,
+     weil iOS das Homescreen-Icon nicht nach Farbschema umschaltet. -->
+<link rel="apple-touch-icon" href="data:image/png;base64,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">
 <style>
+  /* Ein Farbschema pro Systemeinstellung, kein Schalter in der App: die Wahl ist
+     zu dem Zeitpunkt, um den es geht (7 Uhr im Winter, vor der Fahrt), immer schon
+     getroffen. Alles Weitere unten läuft über diese Variablen. */
   :root {
     --bg: #EDF1F5;
     --card: #FFFFFF;
@@ -13,7 +30,21 @@
     --line: #D8E0E7;
     --warm: #D9662E;
     --rain: #2563C4;
-    --rain-soft: #DCE9FB;
+    --scrim: rgba(23, 36, 47, 0.45);
+    --shadow: rgba(23, 36, 47, 0.25);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #10161B;
+      --card: #1A2229;
+      --ink: #E4EAF0;
+      --muted: #93A2AF;
+      --line: #2C3740;
+      --warm: #F08A4B;
+      --rain: #6FA8F5;
+      --scrim: rgba(0, 0, 0, 0.6);
+      --shadow: rgba(0, 0, 0, 0.5);
+    }
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
@@ -21,7 +52,11 @@
     background: var(--bg);
     color: var(--ink);
     font-family: "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif;
-    padding: 20px 16px 32px;
+    padding:
+      calc(20px + env(safe-area-inset-top))
+      calc(16px + env(safe-area-inset-right))
+      calc(32px + env(safe-area-inset-bottom))
+      calc(16px + env(safe-area-inset-left));
     max-width: 460px;
     margin: 0 auto;
     font-size: 16px;
@@ -197,7 +232,7 @@
     align-items: center;
     justify-content: center;
     padding: 20px;
-    background: rgba(23, 36, 47, 0.45);
+    background: var(--scrim);
   }
   .rose-backdrop[hidden] { display: none; }
   .rose-card {
@@ -207,7 +242,7 @@
     background: var(--card);
     border-radius: 18px;
     padding: 16px 16px 18px;
-    box-shadow: 0 12px 40px rgba(23, 36, 47, 0.25);
+    box-shadow: 0 12px 40px var(--shadow);
   }
   .rose-title {
     font-size: 0.8rem;
@@ -785,6 +820,15 @@ const RAIN_FULL = 3;
 // Textbreite in viewBox-Einheiten (für die Kollisionsprüfung der Fensterlabels,
 // deren Namen frei gewählt sind). Der Chart wird leicht verkleinert dargestellt,
 // darum ein kleiner Sicherheitszuschlag statt exakter Umrechnung.
+// CSS-Variablen wirken nicht in SVG-Präsentationsattributen, die Farben müssen dort
+// als Literale stehen. Statt sie zu duplizieren (und damit im zweiten Farbschema zu
+// vergessen), werden sie beim Rendern aus dem aktuell geltenden Schema gelesen.
+function palette() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = n => cs.getPropertyValue("--" + n).trim();
+  return { ink: v("ink"), muted: v("muted"), line: v("line"), card: v("card"), warm: v("warm"), rain: v("rain") };
+}
+
 let measureCtx = null;
 function textWidth(t, px) {
   if (!measureCtx) measureCtx = document.createElement("canvas").getContext("2d");
@@ -794,6 +838,7 @@ function textWidth(t, px) {
 
 function renderChart(h, now, windows) {
   const W = 420, H = 192, padL = 30, padR = 8, padT = 56, padB = 22;
+  const col = palette();
   // Dargestellter Zeitraum, auf volle Stunden gerundet: im Normalfall Tag für Tag
   // derselbe (ruhiges Bild), erweitert nur um Fenster bzw. eine Jetzt-Linie
   // ausserhalb der Basis. Dadurch liegt garantiert alles Gezeichnete im Plotbereich.
@@ -838,10 +883,10 @@ function renderChart(h, now, windows) {
 
   // Hilfslinien: alle 3 h / 3 °C, Hauptlinien (alle 6) leicht kräftiger
   for (let hr = tick0; hr <= t1; hr += 3) {
-    s += '<line x1="' + x(hr) + '" y1="' + padT + '" x2="' + x(hr) + '" y2="' + (H - padB) + '" stroke="#17242F" stroke-width="1" opacity="' + (hr % 6 === 0 ? 0.11 : 0.05) + '"/>';
+    s += '<line x1="' + x(hr) + '" y1="' + padT + '" x2="' + x(hr) + '" y2="' + (H - padB) + '" stroke="' + col.ink + '" stroke-width="1" opacity="' + (hr % 6 === 0 ? 0.11 : 0.05) + '"/>';
   }
   for (let v = tMin; v <= tMax; v += 3) {
-    s += '<line x1="' + padL + '" y1="' + yT(v) + '" x2="' + (W - padR) + '" y2="' + yT(v) + '" stroke="#17242F" stroke-width="1" opacity="' + (v % 6 === 0 ? 0.11 : 0.05) + '"/>';
+    s += '<line x1="' + padL + '" y1="' + yT(v) + '" x2="' + (W - padR) + '" y2="' + yT(v) + '" stroke="' + col.ink + '" stroke-width="1" opacity="' + (v % 6 === 0 ? 0.11 : 0.05) + '"/>';
   }
 
   // Wetter-Icons alle 3 h am oberen Rand; klar/bewölkt nachts als Mond/Wolke,
@@ -859,7 +904,7 @@ function renderChart(h, now, windows) {
   // Fenster-Zonen (echte Zeitfenster, nicht die Datenstunden)
   windows.forEach(w => {
     const x0 = x(w.from), x1 = x(w.to);
-    s += '<rect x="' + x0 + '" y="' + padT + '" width="' + (x1 - x0) + '" height="' + (H - padT - padB) + '" fill="#17242F" opacity="0.06" rx="4"><title>' + esc(w.label) + ' ' + w.time + '</title></rect>';
+    s += '<rect x="' + x0 + '" y="' + padT + '" width="' + (x1 - x0) + '" height="' + (H - padT - padB) + '" fill="' + col.ink + '" opacity="0.06" rx="4"><title>' + esc(w.label) + ' ' + w.time + '</title></rect>';
   });
 
   // Fensterlabels kollisionsfrei setzen: ein 30-Minuten-Fenster ist schmaler als
@@ -880,7 +925,7 @@ function renderChart(h, now, windows) {
     placed.push(b);
   });
   placed.forEach(b => {
-    s += '<text x="' + ((b.l + b.r) / 2) + '" y="' + (padT - 4) + '" text-anchor="middle" font-size="9" fill="#5C6B78">' + esc(windows[b.k].label) + '</text>';
+    s += '<text x="' + ((b.l + b.r) / 2) + '" y="' + (padT - 4) + '" text-anchor="middle" font-size="9" fill="' + col.muted + '">' + esc(windows[b.k].label) + '</text>';
   });
 
   // Regenbalken über der Stunde, die sie beschreiben ([i, i+1) statt mittig auf der
@@ -888,17 +933,17 @@ function renderChart(h, now, windows) {
   rain.forEach((v, k) => {
     if (v <= 0) return;
     const x0 = x(hoursR[k]) + 1, x1 = x(hoursR[k] + 1) - 1;
-    s += '<rect x="' + x0 + '" y="' + yR(v) + '" width="' + (x1 - x0) + '" height="' + (H - padB - yR(v)) + '" fill="#2563C4" opacity="0.75" rx="2"/>';
+    s += '<rect x="' + x0 + '" y="' + yR(v) + '" width="' + (x1 - x0) + '" height="' + (H - padB - yR(v)) + '" fill="' + col.rain + '" opacity="0.75" rx="2"/>';
   });
 
   // Temperaturkurve
   if (tPts.length) {
     const path = tPts.map(([i, v], k) => (k ? "L" : "M") + x(i).toFixed(1) + " " + yT(v).toFixed(1)).join(" ");
-    s += '<path d="' + path + '" fill="none" stroke="#D9662E" stroke-width="2.5" stroke-linecap="round"/>';
+    s += '<path d="' + path + '" fill="none" stroke="' + col.warm + '" stroke-width="2.5" stroke-linecap="round"/>';
   }
 
   // Spitzenwert des Regens anschreiben: ohne diese eine Zahl hat die Balkenhöhe
-  // keinen ablesbaren Massstab. Weisse Kontur, damit sie auch über der
+  // keinen ablesbaren Massstab. Kontur in Kartenfarbe, damit sie auch über der
   // Temperaturkurve lesbar bleibt.
   const peak = Math.max(0, ...rain);
   if (peak > 0) {
@@ -906,22 +951,22 @@ function renderChart(h, now, windows) {
     const txt = fmt(peak, 1) + " mm/h";
     const bw = textWidth(txt, 9);
     const cx = Math.max(padL + bw / 2, Math.min(W - padR - bw / 2, (x(hoursR[pk]) + x(hoursR[pk] + 1)) / 2));
-    s += '<text x="' + cx + '" y="' + (yR(peak) - 4) + '" text-anchor="middle" font-size="9" fill="#2563C4" stroke="#FFFFFF" stroke-width="2.5" paint-order="stroke">' + txt + '</text>';
+    s += '<text x="' + cx + '" y="' + (yR(peak) - 4) + '" text-anchor="middle" font-size="9" fill="' + col.rain + '" stroke="' + col.card + '" stroke-width="2.5" paint-order="stroke">' + txt + '</text>';
   }
 
   // Jetzt-Linie
   if (now >= 0) {
     const nx = x(now);
-    s += '<line x1="' + nx + '" y1="' + padT + '" x2="' + nx + '" y2="' + (H - padB) + '" stroke="#17242F" stroke-width="1" stroke-dasharray="3 3" opacity="0.5"/>';
+    s += '<line x1="' + nx + '" y1="' + padT + '" x2="' + nx + '" y2="' + (H - padB) + '" stroke="' + col.ink + '" stroke-width="1" stroke-dasharray="3 3" opacity="0.5"/>';
   }
 
   // Achsen-Labels an denselben 3-Stunden-Marken wie die Hilfslinien
   for (let hr = tick0; hr <= t1; hr += 3) {
-    s += '<text x="' + x(hr) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="9" fill="#5C6B78">' + hr + '</text>';
+    s += '<text x="' + x(hr) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="9" fill="' + col.muted + '">' + hr + '</text>';
   }
   // Temperaturachse alle 6° angeschrieben (gleiche Major-Ticks wie die Zeitachse)
   for (let v = Math.ceil(tMin / 6) * 6; v <= tMax; v += 6) {
-    s += '<text x="2" y="' + (yT(v) + 3) + '" font-size="9" fill="#5C6B78">' + v + '°</text>';
+    s += '<text x="2" y="' + (yT(v) + 3) + '" font-size="9" fill="' + col.muted + '">' + v + '°</text>';
   }
 
   s += "</svg>";
@@ -929,15 +974,15 @@ function renderChart(h, now, windows) {
 }
 
 // Windrose (im Fenster-Dialog eingebettet): 16 anklickbare Sektoren
-// (data-angle = Fahrtrichtung des Fensters), aktueller Sektor dunkel gefüllt.
-// Farben fest (CSS-Variablen wirken nicht in
-// SVG-Präsentationsattributen).
+// (data-angle = Fahrtrichtung des Fensters), aktueller Sektor in Schriftfarbe
+// gefüllt. Farben wie im Chart über palette() aus dem aktuellen Schema.
 function buildRose(heading) {
   const cx = 140, cy = 140, R = 110, lr = 128;
+  const col = palette();
   const selIdx = Math.round(heading / 22.5) % 16;
   const pol = (deg, r) => [cx + r * Math.sin(deg * Math.PI / 180), cy - r * Math.cos(deg * Math.PI / 180)];
   let s = '<svg viewBox="0 0 280 280" role="group" aria-label="Windrose">';
-  s += '<circle cx="140" cy="140" r="110" fill="none" stroke="#D8E0E7" stroke-width="1"/>';
+  s += '<circle cx="140" cy="140" r="110" fill="none" stroke="' + col.line + '" stroke-width="1"/>';
   for (let i = 0; i < 16; i++) {
     const a = i * 22.5;
     const [x0, y0] = pol(a - 11.25, R);
@@ -946,7 +991,7 @@ function buildRose(heading) {
     s += '<path data-angle="' + a + '" style="cursor:pointer" '
       + 'd="M140 140 L' + x0.toFixed(1) + ' ' + y0.toFixed(1)
       + ' A110 110 0 0 1 ' + x1.toFixed(1) + ' ' + y1.toFixed(1) + ' Z" '
-      + 'fill="' + (on ? '#17242F' : '#FFFFFF') + '" stroke="#D8E0E7" stroke-width="1"/>';
+      + 'fill="' + (on ? col.ink : col.card) + '" stroke="' + col.line + '" stroke-width="1"/>';
   }
   // Beschriftung der 8 Hauptrichtungen; N/O/S/W kräftiger
   [[0,"N",1],[45,"NO",0],[90,"O",1],[135,"SO",0],[180,"S",1],[225,"SW",0],[270,"W",1],[315,"NW",0]]
@@ -954,9 +999,9 @@ function buildRose(heading) {
       const [lx, ly] = pol(a, lr);
       s += '<text x="' + lx.toFixed(1) + '" y="' + (ly + 4).toFixed(1) + '" text-anchor="middle" '
         + 'font-size="' + (big ? 15 : 12) + '" font-weight="' + (big ? 700 : 600) + '" '
-        + 'fill="' + (big ? '#17242F' : '#5C6B78') + '">' + t + '</text>';
+        + 'fill="' + (big ? col.ink : col.muted) + '">' + t + '</text>';
     });
-  s += '<circle cx="140" cy="140" r="3" fill="#5C6B78"/>';
+  s += '<circle cx="140" cy="140" r="3" fill="' + col.muted + '"/>';
   s += '</svg>';
   return s;
 }
@@ -1190,6 +1235,17 @@ async function onResume() {
     refreshing = false;
   }
 }
+
+// Chart und Windrose tragen ihre Farben als SVG-Attribute, die beim Rendern
+// festgeschrieben werden. Schaltet iOS nachts automatisch auf Dunkel, während die
+// App eingefroren im Hintergrund liegt, blieben sie sonst im alten Schema stehen.
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  if (hourlyData) render();
+  if (editingId !== null) {
+    const w = windowsFor(currentSet).find(x => x.id === editingId);
+    if (w) updateDirRow(w);
+  }
+});
 
 window.addEventListener("pageshow", e => { if (e.persisted) onResume(); });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) onResume(); });
