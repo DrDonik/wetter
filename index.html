@@ -1085,11 +1085,21 @@ let currentDay = 0;
 let currentSet = "arbeit";
 let locating = false;
 
-// Samstag/Sonntag standardmässig Freizeit-Fenster
-function defaultSetFor(day) {
+// Eine manuelle Set-Wahl gilt nur für den Tag, an dem sie getroffen wurde:
+// „heute arbeite ich ausnahmsweise" darf „morgen" nicht mitziehen. Schlüssel ist
+// deshalb das echte Datum und nicht der Knopf — sonst rutschte die Wahl beim
+// Tageswechsel still von „morgen" auf „heute".
+const setChoice = {};
+
+function dayDate(day) {
   const d = new Date();
   d.setDate(d.getDate() + day);
-  const wd = d.getDay();
+  return d;
+}
+
+// Samstag/Sonntag standardmässig Freizeit-Fenster
+function defaultSetFor(day) {
+  const wd = dayDate(day).getDay();
   return wd === 0 || wd === 6 ? "freizeit" : "arbeit";
 }
 
@@ -1108,12 +1118,14 @@ function sliceDay(h, day) {
 
 function renderDay(day) {
   currentDay = day;
-  currentSet = defaultSetFor(day);
+  // Die Wochentags-Automatik ist nur der Startwert, nicht der Zwangswert.
+  currentSet = setChoice[dayDate(day).toDateString()] || defaultSetFor(day);
   render();
 }
 
 function renderSet(set) {
   currentSet = set;
+  setChoice[dayDate(currentDay).toDateString()] = set;
   render();
 }
 
@@ -1229,8 +1241,13 @@ async function onResume() {
     if (dayChanged || Date.now() - loadedAtMs > STALE_MS) {
       try { await loadData(); } catch (e) {}
     }
-    if (dayChanged) renderDay(new Date().getHours() >= 20 ? 1 : 0);
-    else render();
+    if (dayChanged) {
+      // Gestrige Set-Wahl ist erledigt; die App läuft auf dem Homescreen wochenlang
+      // weiter, also nicht bloss ignorieren, sondern wegräumen.
+      const keep = [dayDate(0).toDateString(), dayDate(1).toDateString()];
+      for (const k of Object.keys(setChoice)) if (!keep.includes(k)) delete setChoice[k];
+      renderDay(new Date().getHours() >= 20 ? 1 : 0);
+    } else render();
   } finally {
     refreshing = false;
   }
