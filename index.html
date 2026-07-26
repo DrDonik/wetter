@@ -705,12 +705,17 @@ function coordName(lat, lon) {
 // Standort bestimmen: gecacht (normales Öffnen) oder frisch orten (locate=true;
 // Klick auf den Namen bzw. Erststart ohne Cache). Bei fehlgeschlagener Ortung
 // bleibt der alte Standort erhalten (am Namen sieht man, dass nichts kam).
+// Gespeichert wird ein neu ermittelter Standort nicht hier, sondern erst in
+// loadData(), wenn auch das Wetter dazu da ist — deshalb sagt store, ob es
+// überhaupt etwas Neues zu speichern gibt. Cache und Fallback sind es nicht: ein
+// geschriebener Fallback würde beim nächsten Start als Standort durchgehen und
+// init() das Orten ersparen.
 async function resolveLocation(locate, fresh) {
   let cached = null;
   try { cached = JSON.parse(localStorage.getItem("wetterLoc") || "null"); } catch (e) {}
-  if (!locate && cached) return cached;
+  if (!locate && cached) return { loc: cached, store: false };
   const live = await getPos(fresh ? 0 : 600000);
-  if (!live) return cached || { ...FALLBACK };
+  if (!live) return { loc: cached || { ...FALLBACK }, store: false };
   // Stufe 1 geo.admin (CH): liefert es einen Namen → Schweiz (ch:true →
   // MeteoSwiss). War es erreichbar, fand aber nichts → echtes Ausland (ch:false →
   // best_match) und Stufe 2 global (BigDataCloud) für den Namen. War geo.admin
@@ -724,8 +729,7 @@ async function resolveLocation(locate, fresh) {
     loc.name = await resolveNameGlobal(live.lat, live.lon) || coordName(live.lat, live.lon);
     if (geo.reached) loc.ch = false;
   }
-  localStorage.setItem("wetterLoc", JSON.stringify(loc));
-  return loc;
+  return { loc, store: true };
 }
 
 async function loadWeather(pos) {
@@ -1133,6 +1137,7 @@ let loadedDate = "";
 let currentDay = 0;
 let currentSet = "arbeit";
 let locating = false;
+let loadFailed = false;
 
 // Eine manuelle Set-Wahl gilt nur für den Tag, an dem sie getroffen wurde:
 // „heute arbeite ich ausnahmsweise" darf „morgen" nicht mitziehen. Schlüssel ist
@@ -1178,9 +1183,9 @@ function renderSet(set) {
   render();
 }
 
-// „Stand" trägt das Datum nur, wenn die Daten nicht von heute sind. onResume()
-// schluckt einen fehlgeschlagenen Reload: nach einem Resume ohne Netz stehen
-// sonst gestrige Zahlen unter einer Uhrzeit, die heute genauso plausibel aussieht.
+// „Stand" trägt das Datum nur, wenn die Daten nicht von heute sind: nach einem
+// Resume ohne Netz stünden sonst gestrige Zahlen unter einer Uhrzeit, die heute
+// genauso plausibel aussieht.
 function fmtStand() {
   const load = new Date(loadedAtMs);
   const today = new Date();
@@ -1207,9 +1212,13 @@ function render() {
   renderAdvice(day, windows);
   renderWindows(day, now, windows);
   renderChart(day, now, windows);
+  // Ein fehlgeschlagener Nachlade-Versuch steht dort, wo die Frische schon steht:
+  // ohne den Zusatz sähe der alte „Stand" nach „passt schon" aus. Im Normalfall
+  // kostet er kein Zeichen und der nächste erfolgreiche Reload räumt ihn weg.
   document.getElementById("foot").textContent =
     (windows.some(w => w.mode === "Velo") ? "VELO: gefühlt inkl. Fahrtwind (" + RIDE_KMH + " km/h) · " : "") +
-    "Daten: Open-Meteo · Stand " + fmtStand();
+    "Daten: Open-Meteo · Stand " + fmtStand() +
+    (loadFailed ? " · Aktualisierung fehlgeschlagen" : "");
 }
 
 // Klick auf den Namen: neu orten, Gemeinde auflösen und Wetter neu laden.
@@ -1219,20 +1228,30 @@ async function relocate() {
   locating = true;
   const modeEl = document.getElementById("locmode");
   if (modeEl) modeEl.textContent = "…";
-  try { await loadData(true, true); } catch (e) {}
+  try { await loadData(true, true); } catch (e) {} // Fehler steht in der Fusszeile
   render();
   locating = false;
 }
 
+// Entweder alles neu oder alles alt: sichtbarer Zustand und gespeicherter Standort
+// werden erst angefasst, wenn das Wetter da ist. Sonst stünde nach einem
+// abgebrochenen Neu-Orten der neue Ortsname über den Zahlen des alten Orts.
 async function loadData(locate, fresh) {
-  const pos = await resolveLocation(locate, fresh);
-  posName = pos.name;
-  const data = await loadWeather(pos);
-  hourlyData = data.hourly;
-  const now = new Date();
-  loadedAt = now.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
-  loadedAtMs = now.getTime();
-  loadedDate = now.toDateString();
+  try {
+    const { loc, store } = await resolveLocation(locate, fresh);
+    const data = await loadWeather(loc);
+    if (store) localStorage.setItem("wetterLoc", JSON.stringify(loc));
+    posName = loc.name;
+    hourlyData = data.hourly;
+    const now = new Date();
+    loadedAt = now.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
+    loadedAtMs = now.getTime();
+    loadedDate = now.toDateString();
+    loadFailed = false;
+  } catch (e) {
+    loadFailed = true;
+    throw e;
+  }
 }
 
 async function init() {
@@ -1289,8 +1308,11 @@ async function onResume() {
     checkVersion();
     if (!hourlyData) { await init(); return; }
     const dayChanged = new Date().toDateString() !== loadedDate;
-    if (dayChanged || Date.now() - loadedAtMs > STALE_MS) {
-      try { await loadData(); } catch (e) {}
+    // Nach einem Fehlversuch immer nachladen, auch wenn der „Stand" noch frisch
+    // aussieht: sonst hinge der Hinweis aus einem gescheiterten relocate() bis zu
+    // STALE_MS fest, obwohl längst wieder Netz da ist.
+    if (loadFailed || dayChanged || Date.now() - loadedAtMs > STALE_MS) {
+      try { await loadData(); } catch (e) {} // Fehler steht in der Fusszeile
     }
     if (dayChanged) {
       // Gestrige Set-Wahl ist erledigt; die App läuft auf dem Homescreen wochenlang
