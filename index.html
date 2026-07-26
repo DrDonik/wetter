@@ -1004,13 +1004,17 @@ function buildDurOptions(sel) {
   const vals = [];
   for (let d = 0.25; d <= 4.001; d += 0.25) vals.push(d);
   // Eine gespeicherte Dauer ausserhalb des Viertelstunden-Rasters wird einsortiert
-  // und nicht vorangestellt — sonst stünde ein migriertes 1:20 vor 0:15.
+  // und nicht vorangestellt — sonst stünde ein migriertes 1:20 vor 0:15. Die
+  // Toleranz bleibt grob: sie fängt Werte, die auf die Minute dasselbe Label
+  // ergeben, und verhindert damit zwei Optionen, die für den Nutzer identisch
+  // aussehen. Der Wert selbst behält seine volle Genauigkeit, damit ein
+  // Wiederwählen derselben Option die Dauer nicht minim verschiebt.
   if (!vals.some(d => Math.abs(d - sel) < 0.01)) {
     vals.push(sel);
     vals.sort((a, b) => a - b);
   }
   document.getElementById("we-dur").innerHTML = vals.map(d =>
-    '<option value="' + d.toFixed(2) + '"' + (Math.abs(d - sel) < 0.01 ? " selected" : "") + '>'
+    '<option value="' + d + '"' + (Math.abs(d - sel) < 0.01 ? " selected" : "") + '>'
     + fmtDur(d) + '</option>').join("");
 }
 // Richtungsbereich (eingebettete Windrose) im Fenster-Dialog: nur bei Velo.
