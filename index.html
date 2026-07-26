@@ -321,7 +321,7 @@
 </head>
 <body>
 <header>
-  <h1 id="loc">Standort wird ermittelt …</h1>
+  <h1 id="loc"><button type="button" id="locmode" class="locmode">Standort wird ermittelt …</button></h1>
   <div class="toggles" id="toggles" hidden>
     <div class="daytoggle">
       <button id="btn-today" aria-pressed="true">Heute</button>
@@ -487,11 +487,10 @@ function splitHM(h) {
   if (M === 60) { H += 1; M = 0; }
   return [H, M];
 }
+// Einheitliches Zeitformat „07:30" für Karten, Chart und Dialog. Zweistellig,
+// weil das native <input type="time"> ohnehin so anzeigt und genau dieses Format
+// als Wert erwartet — dieselbe Funktion dient deshalb beidem.
 function fmtTime(h) {
-  const [H, M] = splitHM(h);
-  return H + ":" + String(M).padStart(2, "0");
-}
-function toTimeValue(h) {
   const [H, M] = splitHM(h);
   return String(H).padStart(2, "0") + ":" + String(M).padStart(2, "0");
 }
@@ -532,20 +531,38 @@ function headingFor(w) {
 }
 const THUNDER_CODES = [95, 96, 99];
 
-// WMO weather_code -> Symbol + Beschreibung, absteigend nach Schwere geprüft
+// WMO weather_code -> Symbol + Beschreibung, absteigend nach Schwere aus
+// Velo-Sicht. Die Reihenfolge ist gleichzeitig die Rangfolge: sie entscheidet in
+// worstSymbol(), welche von mehreren Stunden das Symbol eines Fensters stellt.
+// Deshalb steht Eisglätte über Schnee (gefrierender Regen ist fürs Velo
+// gefährlicher) und Schnee über Regenschauer. Die Tests sind bewusst Bereiche und
+// keine offenen Untergrenzen: nach Code-Wert wäre die Reihenfolge eine andere.
+const WX = [
+  [c => c >= 95,                      "⛈️", "Gewitter"],
+  [c => [56, 57, 66, 67].includes(c), "🧊", "Eisglätte"],
+  [c => c >= 85,                      "🌨️", "Schneeschauer"],
+  [c => c >= 71 && c <= 77,           "🌨️", "Schnee"],
+  [c => c >= 80 && c <= 82,           "🌦️", "Regenschauer"],
+  [c => c >= 61,                      "🌧️", "Regen"],
+  [c => c >= 51,                      "🌦️", "Nieselregen"],
+  [c => c >= 45,                      "🌫️", "Nebel"],
+  [c => c === 3,                      "☁️", "bedeckt"],
+  [c => c === 2,                      "⛅", "teils bewölkt"],
+  [c => c === 1,                      "🌤️", "leicht bewölkt"],
+  [() => true,                        "☀️", "klar"]
+];
+function wxRank(code) {
+  return WX.findIndex(([test]) => test(code));
+}
 function weatherSymbol(code) {
-  if (code >= 95) return ["⛈️", "Gewitter"];
-  if (code >= 85) return ["🌨️", "Schneeschauer"];
-  if (code >= 80) return ["🌦️", "Regenschauer"];
-  if (code >= 71) return ["🌨️", "Schnee"];
-  if ([56, 57, 66, 67].includes(code)) return ["🧊", "Eisglätte"];
-  if (code >= 61) return ["🌧️", "Regen"];
-  if (code >= 51) return ["🌦️", "Nieselregen"];
-  if (code >= 45) return ["🌫️", "Nebel"];
-  if (code === 3)  return ["☁️", "bedeckt"];
-  if (code === 2)  return ["⛅", "teils bewölkt"];
-  if (code === 1)  return ["🌤️", "leicht bewölkt"];
-  return ["☀️", "klar"];
+  const [, sym, text] = WX[wxRank(code)];
+  return [sym, text];
+}
+// Symbol für mehrere Stunden: das schwerste Wetter gewinnt, also der kleinste
+// Rang. Math.max über die Rohcodes wäre falsch, weil WMO-Codes nicht monoton nach
+// Schwere steigen — ein Regenschauer (80–82) gewänne gegen Schnee (71–77).
+function worstSymbol(codes) {
+  return weatherSymbol(codes.reduce((a, b) => (wxRank(b) < wxRank(a) ? b : a), 0));
 }
 // Notnagel, falls beim allerersten Start die Ortung fehlschlägt und noch nichts
 // gespeichert ist — sonst gäbe es gar kein Wetter. Sonst wird nie geortet, ohne
@@ -684,8 +701,13 @@ function rideAdjust(tempAT, windKmh, windDirDeg, headingDeg) {
   return tempAT - 0.7 * (effKmh - windKmh) / 3.6;
 }
 
+// Vor dem Formatieren vorzeichenrichtig auf digits Stellen runden und ein
+// negatives Null auf 0 ziehen: sonst zeigt ein Wert in (-0.5, 0) „-0", an kalten
+// Morgen real sichtbar. NaN bleibt NaN und wird nicht zu 0 verharmlost.
 function fmt(n, digits = 0) {
-  return n.toLocaleString("de-CH", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  const p = 10 ** digits;
+  const r = Math.sign(n) * Math.round(Math.abs(n) * p) / p;
+  return (r === 0 ? 0 : r).toLocaleString("de-CH", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
 // Nutzer-Eingaben (Fenster-Namen) landen in innerHTML/SVG → escapen.
@@ -733,7 +755,7 @@ function renderWindows(h, now, windows) {
       ? "Regen " + prob + " % · " + fmt(mm, 1) + " mm"
       : "trocken";
     if (thunder) rainText += " · Gewitter möglich";
-    const [sym, symText] = weatherSymbol(Math.max(...relevant.map(s => h.weather_code[s.i] ?? 0)));
+    const [sym, symText] = worstSymbol(relevant.map(s => h.weather_code[s.i] ?? 0));
     const el = document.createElement("div");
     el.className = "win fade" + (past ? " past" : i === act ? " now" : "");
     el.dataset.id = w.id;
@@ -942,6 +964,14 @@ function buildRose(heading) {
 let editingId = null;
 let lastFocused = null;
 
+// Der Fenster-Dialog ist modal (aria-modal): solange er offen ist, wird der Rest
+// der Seite inert. Ohne das verlässt man ihn mit Tab nach hinten, statt im Dialog
+// zu zirkulieren. Reihenfolge zählt — inert entzieht einem Element den Fokus,
+// darum vorher merken und erst nach dem Aufheben zurückgeben.
+function setBehindInert(on) {
+  ["header", "#status", "#app"].forEach(sel => document.querySelector(sel).inert = on);
+}
+
 // Fenster-Dialog: Name, Fortbewegung, Start, Dauer und (bei Velo) Richtung anpassen.
 function openWinEditor(id) {
   editingId = id;
@@ -950,17 +980,19 @@ function openWinEditor(id) {
   document.getElementById("we-name").value = w.label;
   document.querySelectorAll("#we-mode button").forEach(b =>
     b.setAttribute("aria-pressed", b.dataset.mode === w.mode));
-  document.getElementById("we-start").value = toTimeValue(w.start);
+  document.getElementById("we-start").value = fmtTime(w.start);
   buildDurOptions(w.dur);
   updateDirRow(w);
-  document.getElementById("win-editor").hidden = false;
   lastFocused = document.activeElement;
+  document.getElementById("win-editor").hidden = false;
+  setBehindInert(true);
   document.querySelector("#we-mode button[aria-pressed='true']")?.focus();
 }
 // Nach dem Entfernen ist die auslösende Karte weg (toAdd = true): Fokus auf „+"
 // statt ins Leere.
 function closeWinEditor(toAdd) {
   document.getElementById("win-editor").hidden = true;
+  setBehindInert(false);
   if (toAdd) document.getElementById("addwin").focus();
   else lastFocused?.focus?.();
 }
@@ -969,14 +1001,21 @@ function fmtDur(h) {
   return H + ":" + String(M).padStart(2, "0");
 }
 function buildDurOptions(sel) {
-  let html = "", found = false;
-  for (let d = 0.25; d <= 4.001; d += 0.25) {
-    const on = Math.abs(d - sel) < 0.01;
-    if (on) found = true;
-    html += '<option value="' + d.toFixed(2) + '"' + (on ? " selected" : "") + '>' + fmtDur(d) + '</option>';
+  const vals = [];
+  for (let d = 0.25; d <= 4.001; d += 0.25) vals.push(d);
+  // Eine gespeicherte Dauer ausserhalb des Viertelstunden-Rasters wird einsortiert
+  // und nicht vorangestellt — sonst stünde ein migriertes 1:20 vor 0:15. Die
+  // Toleranz bleibt grob: sie fängt Werte, die auf die Minute dasselbe Label
+  // ergeben, und verhindert damit zwei Optionen, die für den Nutzer identisch
+  // aussehen. Der Wert selbst behält seine volle Genauigkeit, damit ein
+  // Wiederwählen derselben Option die Dauer nicht minim verschiebt.
+  if (!vals.some(d => Math.abs(d - sel) < 0.01)) {
+    vals.push(sel);
+    vals.sort((a, b) => a - b);
   }
-  if (!found) html = '<option value="' + sel + '" selected>' + fmtDur(sel) + '</option>' + html;
-  document.getElementById("we-dur").innerHTML = html;
+  document.getElementById("we-dur").innerHTML = vals.map(d =>
+    '<option value="' + d + '"' + (Math.abs(d - sel) < 0.01 ? " selected" : "") + '>'
+    + fmtDur(d) + '</option>').join("");
 }
 // Richtungsbereich (eingebettete Windrose) im Fenster-Dialog: nur bei Velo.
 function updateDirRow(w) {
@@ -1047,8 +1086,9 @@ function fmtStand() {
 }
 
 function render() {
-  document.getElementById("loc").innerHTML =
-    '<button type="button" id="locmode" class="locmode">' + esc(posName) + '</button>';
+  // Nur den Text setzen, nicht die Zeile neu bauen: sonst ersetzt jedes Render den
+  // Button und ein darauf liegender Fokus geht verloren (etwa während relocate()).
+  document.getElementById("locmode").textContent = posName;
   document.getElementById("btn-today").setAttribute("aria-pressed", currentDay === 0);
   document.getElementById("btn-tomorrow").setAttribute("aria-pressed", currentDay === 1);
   document.getElementById("btn-arbeit").setAttribute("aria-pressed", currentSet === "arbeit");
@@ -1189,7 +1229,7 @@ document.getElementById("we-start").addEventListener("change", e => {
   // Leeres Feld (z. B. via „löschen") nicht als Mitternacht speichern
   if (!e.target.value) {
     const cur = windowsFor(currentSet).find(x => x.id === editingId);
-    if (cur) e.target.value = toTimeValue(cur.start);
+    if (cur) e.target.value = fmtTime(cur.start);
     return;
   }
   updateWindow(currentSet, editingId, { start: parseTime(e.target.value) });
