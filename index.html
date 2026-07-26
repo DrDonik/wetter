@@ -105,8 +105,10 @@
   }
   /* Tages-Kleiderempfehlung: die Antwort auf die Kernfrage der App, deshalb
      zuoberst — aber als blanke Textzeile, ohne Kasten und ohne Herleitung, damit
-     die Daten-Ebene darunter ruhig bleibt. */
-  .advice { font-size: 1rem; font-weight: 600; margin-bottom: 12px; }
+     die Daten-Ebene darunter ruhig bleibt. Ein Tipp darauf öffnet den Bänder-Dialog:
+     dieselbe Geste wie auf einer Fensterkarte — man tippt auf das, was man ändern
+     will — und deshalb wie dort ohne eigenes Bedien-Symbol. */
+  .advice { font-size: 1rem; font-weight: 600; margin-bottom: 12px; cursor: pointer; }
   .advice .thunder { color: var(--rain); }
   .windows { display: flex; flex-direction: column; gap: 10px; }
   .win {
@@ -305,6 +307,7 @@
     -webkit-tap-highlight-color: transparent;
   }
   .we-seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+  .advice:focus-visible,
   .win-body:focus-visible,
   .we-seg button:focus-visible,
   .we-input:focus-visible,
@@ -362,6 +365,48 @@
     -webkit-tap-highlight-color: transparent;
   }
   .we-remove:hover { color: var(--ink); }
+  /* Bänder-Dialog. Kopfzeile bewusst in normaler Schreibweise statt als
+     Versalien-Titel: sie trägt eine Zahl, die sich ändert, und soll auf eine
+     Zeile passen. */
+  .be-head {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.85rem;
+    padding: 0 24px; /* Platz für das ✕ in der Ecke */
+    margin-bottom: 6px;
+  }
+  /* Eine Leiter von warm nach kalt, eine Zeile pro Band. Weil die Bänder lückenlos
+     aneinandergrenzen, genügt pro Zeile eine Zahl — die Untergrenze; die
+     Obergrenze ist die Zeile darüber. */
+  .be-row {
+    display: grid;
+    grid-template-columns: 5.2rem 1fr;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    padding: 5px 6px;
+    margin-top: 4px;
+  }
+  /* Das gerade greifende Band, gleiche Auszeichnung wie das laufende Fenster:
+     Rahmen plus box-shadow verdoppeln die Strichstärke, ohne das Layout zu
+     verschieben — so springt beim Verschieben einer Schwelle nur die Markierung. */
+  .be-row.active { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+  .be-thr {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .be-thr input {
+    width: 2.9rem;
+    padding: 5px 5px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .be-below { padding: 6px 0; }
+  .be-txt { font-size: 0.9rem; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -381,7 +426,7 @@
 
 <div id="status">Lade Wetterdaten …</div>
 <main id="app" hidden>
-  <div class="advice fade" id="advice" hidden></div>
+  <div class="advice fade" id="advice" role="button" tabindex="0" aria-label="Empfehlung anpassen" hidden></div>
   <div class="windows" id="windows"></div>
   <button type="button" id="addwin" class="addwin" aria-label="Zeitfenster hinzufügen">+</button>
   <div class="chart-card fade">
@@ -421,6 +466,15 @@
   </div>
 </div>
 
+<div id="band-editor" class="rose-backdrop" hidden>
+  <div class="rose-card fade" role="dialog" aria-modal="true" aria-label="Empfehlung anpassen" tabindex="-1">
+    <div class="be-head" id="be-head"></div>
+    <div id="be-rows"></div>
+    <button id="be-reset" class="we-remove" type="button">Auf Standardwerte zurücksetzen</button>
+    <button id="be-close" class="rose-close" type="button" aria-label="Schliessen">✕</button>
+  </div>
+</div>
+
 <script>
 // Fenster-Vorgaben: Startzeit + Dauer (in Stunden), Fortbewegung und – bei Velo –
 // Fahrtrichtung (heading in Grad, 0° = N, 90° = O …). Der Nutzer kann alle vier
@@ -440,13 +494,14 @@ const WINDOW_SETS = {
 };
 const RIDE_KMH = 20; // Fahrgeschwindigkeit Velo (0° = N, 90° = O, 180° = S, 270° = W)
 
-// Kleiderempfehlung für den ganzen Tag: persönliche Temperaturbänder, bewusst
-// hart kodiert — die Datei ist bei einer persönlichen App das Einstellungsmenü.
+// Kleiderempfehlung für den ganzen Tag: persönliche Temperaturbänder.
 // Massgebend ist das kälteste Fenster des Tages (fahrtwind-korrigiert): wer dafür
 // angezogen ist, zieht am warmen Nachmittag eine Schicht aus, umgekehrt geht es
 // nicht. min ist die Untergrenze des Bandes (inklusive); das erste passende Band
 // gewinnt, die Liste muss deshalb absteigend sortiert bleiben. Bei Nässe in
 // irgendeinem Fenster gilt die wet-Spalte (Regenjacke ersetzt die Windjacke).
+// Die Texte bleiben hart kodiert — was im Schrank hängt, ändert sich seltener als
+// die Grenze, ab der man es anzieht; die Schwellen sind im Dialog anpassbar.
 const BANDS = [
   { min: 20,        dry: "kurz",                           wet: "kurz, Regenjacke" },
   { min: 14,        dry: "lang",                           wet: "lang, Regenjacke" },
@@ -454,6 +509,32 @@ const BANDS = [
   { min: 2,         dry: "Windjacke, Handschuhe",          wet: "Regenjacke, Handschuhe" },
   { min: -Infinity, dry: "Winterjacke, Handschuhe, Mütze", wet: "Winterjacke, Handschuhe, Mütze, Regenschutz" }
 ];
+
+// Angepasste Schwellen: gespeichert werden nur die endlichen Untergrenzen in der
+// Reihenfolge von BANDS (warm → kalt). Das unterste Band hat keine Schwelle und
+// steht deshalb nicht im Speicher. Passt die Länge nicht (BANDS im File geändert),
+// gilt wieder die Vorlage — bei einer persönlichen App ist das billiger als eine
+// Migration und verliert nur vier Zahlen. Geprüft wird auch die absteigende
+// Reihenfolge: darauf beruht die Bandwahl (erstes passendes Band gewinnt), und ein
+// von Hand verdrehter Eintrag würde sonst stillschweigend das falsche Band liefern.
+function getThresholds() {
+  const def = BANDS.slice(0, -1).map(b => b.min);
+  try {
+    const a = JSON.parse(localStorage.getItem("wetterBands") || "null");
+    if (Array.isArray(a) && a.length === def.length
+      && a.every(n => typeof n === "number" && isFinite(n))
+      && a.every((n, i) => i === 0 || n < a[i - 1])) return a;
+  } catch (e) { /* defekter Eintrag → Vorlage */ }
+  return def;
+}
+function saveThresholds(t) {
+  localStorage.setItem("wetterBands", JSON.stringify(t));
+}
+// Die geltenden Bänder: Texte aus der Vorlage, Schwellen aus dem Speicher.
+function bands() {
+  const t = getThresholds();
+  return BANDS.map((b, i) => i < t.length ? { min: t[i], dry: b.dry, wet: b.wet } : b);
+}
 
 // 16-teilige deutsche Windrose (22,5°-Schritte).
 const DIR16 = ["N","NNO","NO","ONO","O","OSO","SO","SSO","S","SSW","SW","WSW","W","WNW","NW","NNW"];
@@ -815,6 +896,11 @@ function windowMetrics(h, w) {
   return { temp, mm, prob, thunder, wet, sunny, relevant };
 }
 
+// Kältestes Fenster und Nässe des angezeigten Tages, wie sie der Empfehlungszeile
+// zugrunde liegen — der Bänder-Dialog rechnet sie nicht neu, sondern zeigt genau
+// die Zahl, aus der die Zeile entstanden ist. Null, solange keine Fenster da sind.
+let adviceBasis = null;
+
 // Tages-Kleiderempfehlung über alle Fenster des angezeigten Tages: angezogen wird
 // einmal am Morgen, für den ganzen Tag. Vergangene Fenster zählen deshalb mit —
 // die Zeile beschreibt den Morgen-Entscheid und springt nicht mittags um.
@@ -822,10 +908,16 @@ function renderAdvice(h, windows) {
   const el = document.getElementById("advice");
   const ms = windows.map(w => windowMetrics(h, w));
   el.hidden = !ms.length;
+  // Ohne Fenster gibt es keine Empfehlung — und damit auch nichts zu justieren:
+  // die Zeile ist weg, der Dialog folglich nicht erreichbar.
+  adviceBasis = ms.length ? { coldest: Math.min(...ms.map(m => m.temp)), wet: ms.some(m => m.wet) } : null;
+  // Läuft im Hintergrund ein Reload, während der Dialog offen ist, zeigt er sonst
+  // das kälteste Fenster von vorhin. Vor dem Ausstieg, damit das auch für den
+  // fensterlosen Fall gilt und die Synchronisierung an keiner Bedingung hängt.
+  if (!document.getElementById("band-editor").hidden) syncBandRows();
   if (!ms.length) return;
-  const coldest = Math.min(...ms.map(m => m.temp));
-  const band = BANDS.find(b => coldest >= b.min);
-  el.innerHTML = (ms.some(m => m.wet) ? band.wet : band.dry)
+  const band = bands().find(b => adviceBasis.coldest >= b.min);
+  el.innerHTML = (adviceBasis.wet ? band.wet : band.dry)
     + (ms.some(m => m.sunny) ? ", Sonnenbrille" : "")
     + (ms.some(m => m.thunder) ? '<span class="thunder"> · Gewitter möglich</span>' : "");
 }
@@ -1128,6 +1220,69 @@ function updateDirRow(w) {
   document.getElementById("we-dirlbl").textContent = "Richtung: " + dirLabel(w.heading);
   document.getElementById("we-rose").innerHTML = buildRose(w.heading);
 }
+// Bänder-Dialog: die Temperaturschwellen der Kleiderempfehlung. Der Dialog verdeckt
+// die Empfehlungszeile, darum steht die Wirkung im Dialog selbst — die Kopfzeile
+// nennt das kälteste Fenster des angezeigten Tages, die greifende Zeile ist
+// markiert. Verschiebt man eine Schwelle, wandert die Markierung sofort.
+function syncBandRows() {
+  const bs = bands();
+  const act = adviceBasis ? bs.findIndex(b => adviceBasis.coldest >= b.min) : -1;
+  // Hier mit Nachkommastelle, anders als auf den Karten: steht die Zahl direkt
+  // neben den Schwellen, erklärt erst sie, warum 11.6° unter der Schwelle 12 liegt.
+  document.getElementById("be-head").textContent = adviceBasis
+    ? "Kältestes Fenster " + (currentDay === 0 ? "heute" : "morgen") + ": " + fmt(adviceBasis.coldest, 1) + "°"
+    : "Kleiderbänder";
+  document.querySelectorAll("#be-rows .be-row").forEach((row, i) => {
+    row.classList.toggle("active", i === act);
+    const inp = row.querySelector("input");
+    // Nur bei echter Abweichung schreiben: eine Zuweisung setzt sonst die
+    // Einfügemarke im gerade bearbeiteten Feld ans Ende.
+    if (inp && inp.value !== String(bs[i].min)) inp.value = bs[i].min;
+  });
+}
+// Zeigt die Variante, die heute gilt (trocken oder nass) — damit der markierte Text
+// nie dem widerspricht, was auf der Seite steht.
+function renderBandRows() {
+  const bs = bands();
+  document.getElementById("be-rows").innerHTML = bs.map((b, i) =>
+    '<div class="be-row">' +
+    (isFinite(b.min)
+      ? '<label class="be-thr">ab <input type="number" class="we-input" step="1" data-i="' + i +
+        '" value="' + b.min + '" aria-label="Ab wie viel Grad: ' + esc(b.dry) + '">°</label>'
+      : '<span class="be-thr be-below">darunter</span>') +
+    '<span class="be-txt">' + esc(adviceBasis && adviceBasis.wet ? b.wet : b.dry) + '</span>' +
+    '</div>').join("");
+  syncBandRows();
+}
+function openBandEditor() {
+  lastFocused = document.activeElement;
+  renderBandRows();
+  document.getElementById("band-editor").hidden = false;
+  setBehindInert(true);
+  // Auf die Karte fokussieren, nicht ins erste Zahlenfeld: sonst fährt auf dem
+  // Handy sofort die Tastatur hoch und verdeckt die halbe Leiter.
+  document.querySelector("#band-editor .rose-card").focus();
+}
+function closeBandEditor() {
+  document.getElementById("band-editor").hidden = true;
+  setBehindInert(false);
+  lastFocused?.focus?.();
+}
+// Die Leiter muss absteigend bleiben. Ein Wert, der einen Nachbarn überholt, wird
+// auf dessen Nachbarschaft geklemmt, statt die Zeilen umzusortieren — sonst
+// wanderte die eben bearbeitete Zeile unter dem Finger weg. Geklemmt wird erst beim
+// Verlassen des Feldes, damit die „1" auf dem Weg zu „12" nicht korrigiert wird.
+function setThreshold(i, raw) {
+  const t = getThresholds();
+  const v = Math.round(Number(raw));
+  if (raw === "" || !isFinite(v)) return syncBandRows(); // leeres Feld: Wert bleibt
+  const hi = i > 0 ? t[i - 1] - 1 : Infinity;
+  const lo = i < t.length - 1 ? t[i + 1] + 1 : -Infinity;
+  t[i] = Math.min(hi, Math.max(lo, v));
+  saveThresholds(t);
+  render(); // zeichnet die Empfehlungszeile neu und synchronisiert dabei den Dialog
+}
+
 function pickHeading(deg) {
   updateWindow(currentSet, editingId, { heading: ((deg % 360) + 360) % 360 });
   updateDirRow(windowsFor(currentSet).find(x => x.id === editingId));
@@ -1376,6 +1531,19 @@ document.getElementById("win-editor").addEventListener("click", e => {
   const seg = e.target.closest("[data-angle]");
   if (seg) pickHeading(Number(seg.getAttribute("data-angle")));
 });
+document.getElementById("advice").addEventListener("click", openBandEditor);
+document.getElementById("band-editor").addEventListener("click", e => {
+  if (e.target === e.currentTarget || e.target.closest("#be-close")) return closeBandEditor();
+  if (e.target.closest("#be-reset")) {
+    localStorage.removeItem("wetterBands");
+    render();
+    renderBandRows(); // Werte ändern sich alle: die Zeilen komplett neu bauen
+  }
+});
+document.getElementById("be-rows").addEventListener("change", e => {
+  const inp = e.target.closest("input[data-i]");
+  if (inp) setThreshold(Number(inp.dataset.i), inp.value);
+});
 document.getElementById("we-start").addEventListener("change", e => {
   // Leeres Feld (z. B. via „löschen") nicht als Mitternacht speichern
   if (!e.target.value) {
@@ -1398,10 +1566,14 @@ document.getElementById("we-name").addEventListener("change", e => {
     render();
   }
 });
-// Tastatur: Fenster-Karten mit Enter/Space öffnen, Dialog mit Escape schliessen
+// Tastatur: Fenster-Karten und Empfehlungszeile mit Enter/Space öffnen, Dialoge mit
+// Escape schliessen. Beides braucht es explizit — ein div mit role="button" löst bei
+// Enter/Space von sich aus kein click aus.
 document.addEventListener("keydown", e => {
   if (e.key === "Escape" && !document.getElementById("win-editor").hidden) return closeWinEditor();
+  if (e.key === "Escape" && !document.getElementById("band-editor").hidden) return closeBandEditor();
   if (e.key === "Enter" || e.key === " ") {
+    if (e.target.id === "advice") { e.preventDefault(); return openBandEditor(); }
     const body = e.target.closest?.(".win-body");
     if (body) { e.preventDefault(); openWinEditor(body.closest(".win").dataset.id); }
   }
