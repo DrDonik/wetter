@@ -28,19 +28,18 @@
     line-height: 1.4;
   }
   header { margin-bottom: 18px; }
+  /* Oberste Zeile trägt Ort und Datum — ein Titel „Wetter" sagte nichts, was der
+     Nutzer nicht schon weiss. Betonung liegt auf dem Ort (zugleich der
+     antippbare Teil); das Datum bestätigt bloss die Heute/Morgen-Wahl. */
   h1 {
-    font-size: 1.45rem;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-  }
-  .sub {
+    font-size: 0.95rem;
+    font-weight: 400;
     color: var(--muted);
-    font-size: 0.85rem;
-    margin-top: 2px;
   }
   .locmode {
     font: inherit;
-    color: inherit;
+    font-weight: 600;
+    color: var(--ink);
     background: none;
     border: none;
     padding: 0;
@@ -326,8 +325,7 @@
 </head>
 <body>
 <header>
-  <h1 id="title">Wetter</h1>
-  <div class="sub" id="loc">Standort wird ermittelt …</div>
+  <h1 id="loc">Standort wird ermittelt …</h1>
   <div class="toggles" id="toggles" hidden>
     <div class="daytoggle">
       <button id="btn-today" aria-pressed="true">Heute</button>
@@ -727,9 +725,11 @@ function renderWindows(h, nowHour, windows) {
     // billiger als der Fehltreffer.
     const thunder = w.slices.some(s => THUNDER_CODES.includes(h.weather_code[s.i]));
     const wet = prob >= 30 || mm >= 0.2 || thunder;
+    // Ist es trocken, ändert die Wahrscheinlichkeit nichts an der Kleiderwahl —
+    // die Zahl entfällt. Bei Nässe entscheiden Prozent und Menge mit.
     let rainText = wet
       ? "Regen " + prob + " % · " + fmt(mm, 1) + " mm"
-      : "trocken (" + prob + " %)";
+      : "trocken";
     if (thunder) rainText += " · Gewitter möglich";
     const [sym, symText] = weatherSymbol(Math.max(...relevant.map(s => h.weather_code[s.i] ?? 0)));
     const el = document.createElement("div");
