@@ -91,6 +91,11 @@
     line-height: 1;
   }
   .win.past { opacity: 0.42; }
+  /* Das gerade laufende bzw. nächste Fenster: kräftigerer Rahmen als einziges
+     Signal. Der box-shadow verdoppelt die Rahmenstärke optisch, ohne das Layout zu
+     verschieben — alle Karten bleiben gleich hoch. Deckkraft bleibt bewusst dem
+     Zustand „vorbei" vorbehalten, sonst gäbe es zwei Graustufen zu unterscheiden. */
+  .win.now { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
   .win .label { font-weight: 600; font-size: 0.95rem; }
   .win .time { color: var(--muted); font-size: 0.8rem; margin-left: 6px; font-weight: 400; }
   .win .mode {
@@ -689,9 +694,13 @@ function esc(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-function renderWindows(h, nowHour, windows) {
+function renderWindows(h, now, windows) {
   const box = document.getElementById("windows");
   box.innerHTML = "";
+  // Das gerade relevante Fenster: das erste, das noch nicht zu Ende ist. Auf
+  // „Morgen" (now < 0) gibt es keines, und sind alle Fenster vorbei, liefert
+  // findIndex −1 — dann bleibt bewusst jede Karte unhervorgehoben.
+  const act = now < 0 ? -1 : windows.findIndex(w => w.to > now);
   windows.forEach((w, i) => {
     const heading = headingFor(w);
     // Alle Fenstergrössen werden mit dem Überlappungsanteil gewichtet, damit sie
@@ -711,7 +720,9 @@ function renderWindows(h, nowHour, windows) {
     const rel = w.slices.filter(s => s.ov >= 0.25 * dur);
     const relevant = rel.length ? rel : w.slices;
     const prob = Math.max(...relevant.map(s => h.precipitation_probability[s.i] ?? 0));
-    const past = nowHour > Math.max(...w.slices.map(s => s.i));
+    // Vorbei ab der echten Endzeit des Fensters, nicht ab dem Ende der gröbsten
+    // berührten Datenstunde: 17:00–17:30 ist um 17:30 vorbei, nicht erst um 18:00.
+    const past = now >= 0 && now >= w.to;
     // Gewitter bewusst über alle berührten Stunden: hier ist der Fehlalarm
     // billiger als der Fehltreffer.
     const thunder = w.slices.some(s => THUNDER_CODES.includes(h.weather_code[s.i]));
@@ -724,7 +735,7 @@ function renderWindows(h, nowHour, windows) {
     if (thunder) rainText += " · Gewitter möglich";
     const [sym, symText] = weatherSymbol(Math.max(...relevant.map(s => h.weather_code[s.i] ?? 0)));
     const el = document.createElement("div");
-    el.className = "win fade" + (past ? " past" : "");
+    el.className = "win fade" + (past ? " past" : i === act ? " now" : "");
     el.dataset.id = w.id;
     el.innerHTML =
       '<div class="win-body" role="button" tabindex="0" aria-label="' + esc(w.label) + ' anpassen">' +
@@ -759,9 +770,8 @@ function textWidth(t, px) {
   return measureCtx.measureText(t).width * 1.06;
 }
 
-function renderChart(h, nowHour, windows) {
+function renderChart(h, now, windows) {
   const W = 420, H = 192, padL = 30, padR = 8, padT = 56, padB = 22;
-  const now = nowHour >= 0 ? nowHour + new Date().getMinutes() / 60 : -1;
   // Dargestellter Zeitraum, auf volle Stunden gerundet: im Normalfall Tag für Tag
   // derselbe (ruhiges Bild), erweitert nur um Fenster bzw. eine Jetzt-Linie
   // ausserhalb der Basis. Dadurch liegt garantiert alles Gezeichnete im Plotbereich.
@@ -821,7 +831,7 @@ function renderChart(h, nowHour, windows) {
     let [sym, symText] = weatherSymbol(code);
     if (h.is_day?.[hr] === 0 && code <= 2) [sym, symText] = code <= 1 ? ["🌙", "klar"] : ["☁️", "bewölkt"];
     const ix = Math.max(padL + 14, Math.min(W - padR - 14, x(hr)));
-    s += '<text x="' + ix + '" y="30" text-anchor="middle" font-size="28"' + (hr < nowHour ? ' opacity="0.42"' : '') + '><title>' + symText + '</title>' + sym + '</text>';
+    s += '<text x="' + ix + '" y="30" text-anchor="middle" font-size="28"' + (now >= hr + 1 ? ' opacity="0.42"' : '') + '><title>' + symText + '</title>' + sym + '</text>';
   }
 
   // Fenster-Zonen (echte Zeitfenster, nicht die Datenstunden)
@@ -1043,10 +1053,12 @@ function render() {
   document.getElementById("btn-tomorrow").setAttribute("aria-pressed", currentDay === 1);
   document.getElementById("btn-arbeit").setAttribute("aria-pressed", currentSet === "arbeit");
   document.getElementById("btn-freizeit").setAttribute("aria-pressed", currentSet === "freizeit");
-  const nowHour = currentDay === 0 ? new Date().getHours() : -1;
+  // Eine gemeinsame Zeitbasis für Karten und Chart: Dezimalstunde, −1 auf „Morgen".
+  const d = new Date();
+  const now = currentDay === 0 ? d.getHours() + d.getMinutes() / 60 : -1;
   const windows = windowsFor(currentSet);
-  renderWindows(sliceDay(hourlyData, currentDay), nowHour, windows);
-  renderChart(sliceDay(hourlyData, currentDay), nowHour, windows);
+  renderWindows(sliceDay(hourlyData, currentDay), now, windows);
+  renderChart(sliceDay(hourlyData, currentDay), now, windows);
   document.getElementById("foot").textContent =
     (windows.some(w => w.mode === "Velo") ? "VELO: gefühlt inkl. Fahrtwind (" + RIDE_KMH + " km/h) · " : "") +
     "Daten: Open-Meteo · Stand " + fmtStand();
