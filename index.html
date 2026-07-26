@@ -130,7 +130,12 @@
     align-self: center;
     line-height: 1;
   }
-  .win.past { opacity: 0.42; }
+  /* Zwei Deklarationen für denselben Effekt: Die Einblend-Animation der Kacheln
+     füllt mit `both` bis zum Schluss und steht damit in der Kaskade über normalen
+     Regeln — ohne `--fade-to` bliebe die Kachel auf der Deckkraft des End-Keyframes
+     hängen. Die einfache `opacity` gilt dort, wo gar nicht animiert wird (Bewegung
+     reduzieren). */
+  .win.past { --fade-to: 0.42; opacity: 0.42; }
   /* Das gerade laufende bzw. nächste Fenster: kräftigerer Rahmen als einziges
      Signal. Der box-shadow verdoppelt die Rahmenstärke optisch, ohne das Layout zu
      verschieben — alle Karten bleiben gleich hoch. Deckkraft bleibt bewusst dem
@@ -227,7 +232,7 @@
   #status { padding: 40px 0; text-align: center; color: var(--muted); }
   @media (prefers-reduced-motion: no-preference) {
     .fade { animation: in 0.35s ease both; }
-    @keyframes in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    @keyframes in { from { opacity: 0; transform: translateY(4px); } to { opacity: var(--fade-to, 1); transform: none; } }
   }
   .rose-backdrop {
     position: fixed;
