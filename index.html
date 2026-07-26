@@ -28,18 +28,16 @@
     line-height: 1.4;
   }
   header { margin-bottom: 18px; }
-  /* Oberste Zeile trägt Ort und Datum — ein Titel „Wetter" sagte nichts, was der
-     Nutzer nicht schon weiss. Betonung liegt auf dem Ort (zugleich der
-     antippbare Teil); das Datum bestätigt bloss die Heute/Morgen-Wahl. */
+  /* Oberste Zeile trägt den Ort — ein Titel „Wetter" sagte nichts, was der Nutzer
+     nicht schon weiss, und ein Datum nichts, was der Heute/Morgen-Schalter nicht
+     schon sagt. Antippen ortet neu. */
   h1 {
     font-size: 0.95rem;
-    font-weight: 400;
-    color: var(--muted);
+    font-weight: 600;
   }
   .locmode {
     font: inherit;
-    font-weight: 600;
-    color: var(--ink);
+    color: inherit;
     background: none;
     border: none;
     padding: 0;
@@ -1025,12 +1023,22 @@ function renderSet(set) {
   render();
 }
 
+// „Stand" trägt das Datum nur, wenn die Daten nicht von heute sind. onResume()
+// schluckt einen fehlgeschlagenen Reload: nach einem Resume ohne Netz stehen
+// sonst gestrige Zahlen unter einer Uhrzeit, die heute genauso plausibel aussieht.
+function fmtStand() {
+  const load = new Date(loadedAtMs);
+  const today = new Date();
+  if (load.toDateString() === today.toDateString()) return loadedAt;
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (load.toDateString() === yesterday.toDateString()) return "gestern " + loadedAt;
+  return load.toLocaleDateString("de-CH", { day: "numeric", month: "numeric" }) + ", " + loadedAt;
+}
+
 function render() {
-  const d = new Date();
-  d.setDate(d.getDate() + currentDay);
-  const dateStr = d.toLocaleDateString("de-CH", { weekday: "long", day: "numeric", month: "long" });
   document.getElementById("loc").innerHTML =
-    '<button type="button" id="locmode" class="locmode">' + esc(posName) + '</button> · ' + dateStr;
+    '<button type="button" id="locmode" class="locmode">' + esc(posName) + '</button>';
   document.getElementById("btn-today").setAttribute("aria-pressed", currentDay === 0);
   document.getElementById("btn-tomorrow").setAttribute("aria-pressed", currentDay === 1);
   document.getElementById("btn-arbeit").setAttribute("aria-pressed", currentSet === "arbeit");
@@ -1041,7 +1049,7 @@ function render() {
   renderChart(sliceDay(hourlyData, currentDay), nowHour, windows);
   document.getElementById("foot").textContent =
     (windows.some(w => w.mode === "Velo") ? "VELO: gefühlt inkl. Fahrtwind (" + RIDE_KMH + " km/h) · " : "") +
-    "Daten: Open-Meteo · Stand " + loadedAt;
+    "Daten: Open-Meteo · Stand " + fmtStand();
 }
 
 // Klick auf den Namen: neu orten, Gemeinde auflösen und Wetter neu laden.
