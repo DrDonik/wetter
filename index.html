@@ -103,6 +103,11 @@
     background: var(--ink);
     color: var(--bg);
   }
+  /* Tages-Kleiderempfehlung: die Antwort auf die Kernfrage der App, deshalb
+     zuoberst — aber als blanke Textzeile, ohne Kasten und ohne Herleitung, damit
+     die Daten-Ebene darunter ruhig bleibt. */
+  .advice { font-size: 1rem; font-weight: 600; margin-bottom: 12px; }
+  .advice .thunder { color: var(--rain); }
   .windows { display: flex; flex-direction: column; gap: 10px; }
   .win {
     background: var(--card);
@@ -371,6 +376,7 @@
 
 <div id="status">Lade Wetterdaten …</div>
 <main id="app" hidden>
+  <div class="advice fade" id="advice" hidden></div>
   <div class="windows" id="windows"></div>
   <button type="button" id="addwin" class="addwin" aria-label="Zeitfenster hinzufügen">+</button>
   <div class="chart-card fade">
@@ -428,6 +434,21 @@ const WINDOW_SETS = {
   ]
 };
 const RIDE_KMH = 20; // Fahrgeschwindigkeit Velo (0° = N, 90° = O, 180° = S, 270° = W)
+
+// Kleiderempfehlung für den ganzen Tag: persönliche Temperaturbänder, bewusst
+// hart kodiert — die Datei ist bei einer persönlichen App das Einstellungsmenü.
+// Massgebend ist das kälteste Fenster des Tages (fahrtwind-korrigiert): wer dafür
+// angezogen ist, zieht am warmen Nachmittag eine Schicht aus, umgekehrt geht es
+// nicht. min ist die Untergrenze des Bandes (inklusive); das erste passende Band
+// gewinnt, die Liste muss deshalb absteigend sortiert bleiben. Bei Nässe in
+// irgendeinem Fenster gilt die wet-Spalte (Regenjacke ersetzt die Windjacke).
+const BANDS = [
+  { min: 20,        dry: "kurz",                           wet: "kurz, Regenjacke" },
+  { min: 14,        dry: "lang",                           wet: "lang, Regenjacke" },
+  { min: 9,         dry: "lang, Windjacke",                wet: "lang, Regenjacke" },
+  { min: 2,         dry: "Windjacke, Handschuhe",          wet: "Regenjacke, Handschuhe" },
+  { min: -Infinity, dry: "Winterjacke, Handschuhe, Mütze", wet: "Winterjacke, Handschuhe, Mütze, Regenschutz" }
+];
 
 // 16-teilige deutsche Windrose (22,5°-Schritte).
 const DIR16 = ["N","NNO","NO","ONO","O","OSO","SO","SSO","S","SSW","SW","WSW","W","WNW","NW","NNW"];
@@ -751,6 +772,55 @@ function esc(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+// Anzeigewerte eines Fensters aus den Stundendaten. Von den Karten und der
+// Tages-Kleiderempfehlung gemeinsam genutzt: die Empfehlung entsteht dadurch per
+// Konstruktion aus genau den Zahlen, die auf den Karten stehen, und kann ihnen
+// nie widersprechen.
+function windowMetrics(h, w) {
+  const heading = headingFor(w);
+  // Alle Fenstergrössen werden mit dem Überlappungsanteil gewichtet, damit sie
+  // die Fahrt beschreiben und nicht die berührten Datenstunden.
+  const dur = w.slices.reduce((a, s) => a + s.ov, 0) || 1;
+  const temp = w.slices.reduce((a, s) => {
+    const t = h.apparent_temperature[s.i];
+    const eff = (heading == null || h.wind_speed_10m?.[s.i] == null || h.wind_direction_10m?.[s.i] == null)
+      ? t
+      : rideAdjust(t, h.wind_speed_10m[s.i], h.wind_direction_10m[s.i], heading);
+    return a + eff * s.ov;
+  }, 0) / dur;
+  const mm = w.slices.reduce((a, s) => a + (h.precipitation[s.i] ?? 0) * s.ov, 0);
+  // Wahrscheinlichkeit und Symbol nur aus Stunden, die das Fenster nennenswert
+  // abdecken: ein 10-Minuten-Ausläufer in die Nachbarstunde soll die Kachel
+  // nicht dominieren. Der Fallback greift erst bei sehr langen Fenstern.
+  const rel = w.slices.filter(s => s.ov >= 0.25 * dur);
+  const relevant = rel.length ? rel : w.slices;
+  const prob = Math.max(...relevant.map(s => h.precipitation_probability[s.i] ?? 0));
+  // Gewitter bewusst über alle berührten Stunden: hier ist der Fehlalarm
+  // billiger als der Fehltreffer.
+  const thunder = w.slices.some(s => THUNDER_CODES.includes(h.weather_code[s.i]));
+  const wet = prob >= 30 || mm >= 0.2 || thunder;
+  // Sonnig nur bei klarem bis leicht bewölktem Himmel (Code ≤ 1) und Tageslicht:
+  // dieselben relevanten Stunden wie das Kachel-Symbol, damit „Sonnenbrille" nie
+  // neben lauter grauen Symbolen steht — und nicht bei der Fahrt im Dunkeln.
+  const sunny = relevant.some(s => (h.weather_code[s.i] ?? 0) <= 1 && h.is_day?.[s.i] === 1);
+  return { temp, mm, prob, thunder, wet, sunny, relevant };
+}
+
+// Tages-Kleiderempfehlung über alle Fenster des angezeigten Tages: angezogen wird
+// einmal am Morgen, für den ganzen Tag. Vergangene Fenster zählen deshalb mit —
+// die Zeile beschreibt den Morgen-Entscheid und springt nicht mittags um.
+function renderAdvice(h, windows) {
+  const el = document.getElementById("advice");
+  const ms = windows.map(w => windowMetrics(h, w));
+  el.hidden = !ms.length;
+  if (!ms.length) return;
+  const coldest = Math.min(...ms.map(m => m.temp));
+  const band = BANDS.find(b => coldest >= b.min);
+  el.innerHTML = (ms.some(m => m.wet) ? band.wet : band.dry)
+    + (ms.some(m => m.sunny) ? ", Sonnenbrille" : "")
+    + (ms.some(m => m.thunder) ? '<span class="thunder"> · Gewitter möglich</span>' : "");
+}
+
 function renderWindows(h, now, windows) {
   const box = document.getElementById("windows");
   box.innerHTML = "";
@@ -759,31 +829,10 @@ function renderWindows(h, now, windows) {
   // findIndex −1 — dann bleibt bewusst jede Karte unhervorgehoben.
   const act = now < 0 ? -1 : windows.findIndex(w => w.to > now);
   windows.forEach((w, i) => {
-    const heading = headingFor(w);
-    // Alle Fenstergrössen werden mit dem Überlappungsanteil gewichtet, damit sie
-    // die Fahrt beschreiben und nicht die berührten Datenstunden.
-    const dur = w.slices.reduce((a, s) => a + s.ov, 0) || 1;
-    const temp = w.slices.reduce((a, s) => {
-      const t = h.apparent_temperature[s.i];
-      const eff = (heading == null || h.wind_speed_10m?.[s.i] == null || h.wind_direction_10m?.[s.i] == null)
-        ? t
-        : rideAdjust(t, h.wind_speed_10m[s.i], h.wind_direction_10m[s.i], heading);
-      return a + eff * s.ov;
-    }, 0) / dur;
-    const mm = w.slices.reduce((a, s) => a + (h.precipitation[s.i] ?? 0) * s.ov, 0);
-    // Wahrscheinlichkeit und Symbol nur aus Stunden, die das Fenster nennenswert
-    // abdecken: ein 10-Minuten-Ausläufer in die Nachbarstunde soll die Kachel
-    // nicht dominieren. Der Fallback greift erst bei sehr langen Fenstern.
-    const rel = w.slices.filter(s => s.ov >= 0.25 * dur);
-    const relevant = rel.length ? rel : w.slices;
-    const prob = Math.max(...relevant.map(s => h.precipitation_probability[s.i] ?? 0));
+    const { temp, mm, prob, thunder, wet, relevant } = windowMetrics(h, w);
     // Vorbei ab der echten Endzeit des Fensters, nicht ab dem Ende der gröbsten
     // berührten Datenstunde: 17:00–17:30 ist um 17:30 vorbei, nicht erst um 18:00.
     const past = now >= 0 && now >= w.to;
-    // Gewitter bewusst über alle berührten Stunden: hier ist der Fehlalarm
-    // billiger als der Fehltreffer.
-    const thunder = w.slices.some(s => THUNDER_CODES.includes(h.weather_code[s.i]));
-    const wet = prob >= 30 || mm >= 0.2 || thunder;
     // Ist es trocken, ändert die Wahrscheinlichkeit nichts an der Kleiderwahl —
     // die Zahl entfällt. Bei Nässe entscheiden Prozent und Menge mit.
     let rainText = wet
@@ -1154,8 +1203,10 @@ function render() {
   const d = new Date();
   const now = currentDay === 0 ? d.getHours() + d.getMinutes() / 60 : -1;
   const windows = windowsFor(currentSet);
-  renderWindows(sliceDay(hourlyData, currentDay), now, windows);
-  renderChart(sliceDay(hourlyData, currentDay), now, windows);
+  const day = sliceDay(hourlyData, currentDay);
+  renderAdvice(day, windows);
+  renderWindows(day, now, windows);
+  renderChart(day, now, windows);
   document.getElementById("foot").textContent =
     (windows.some(w => w.mode === "Velo") ? "VELO: gefühlt inkl. Fahrtwind (" + RIDE_KMH + " km/h) · " : "") +
     "Daten: Open-Meteo · Stand " + fmtStand();
