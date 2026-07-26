@@ -799,7 +799,11 @@ function windowMetrics(h, w) {
   // billiger als der Fehltreffer.
   const thunder = w.slices.some(s => THUNDER_CODES.includes(h.weather_code[s.i]));
   const wet = prob >= 30 || mm >= 0.2 || thunder;
-  return { temp, mm, prob, thunder, wet, relevant };
+  // Sonnig nur bei klarem bis leicht bewölktem Himmel (Code ≤ 1) und Tageslicht:
+  // dieselben relevanten Stunden wie das Kachel-Symbol, damit „Sonnenbrille" nie
+  // neben lauter grauen Symbolen steht — und nicht bei der Fahrt im Dunkeln.
+  const sunny = relevant.some(s => (h.weather_code[s.i] ?? 0) <= 1 && h.is_day?.[s.i] === 1);
+  return { temp, mm, prob, thunder, wet, sunny, relevant };
 }
 
 // Tages-Kleiderempfehlung über alle Fenster des angezeigten Tages: angezogen wird
@@ -813,6 +817,7 @@ function renderAdvice(h, windows) {
   const coldest = Math.min(...ms.map(m => m.temp));
   const band = BANDS.find(b => coldest >= b.min);
   el.innerHTML = (ms.some(m => m.wet) ? band.wet : band.dry)
+    + (ms.some(m => m.sunny) ? ", Sonnenbrille" : "")
     + (ms.some(m => m.thunder) ? '<span class="thunder"> · Gewitter möglich</span>' : "");
 }
 
