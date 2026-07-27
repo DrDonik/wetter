@@ -1304,6 +1304,10 @@ let loadFailed = false;
 // deshalb das echte Datum und nicht der Knopf — sonst rutschte die Wahl beim
 // Tageswechsel still von „morgen" auf „heute".
 const setChoice = {};
+// Eine manuelle Heute/Morgen-Wahl gilt – wie die Set-Wahl – nur für den Tag, an dem
+// sie getroffen wurde. Gespeichert wird deshalb das Datum der Wahl und nicht bloss
+// ein Flag: eine gestrige Wahl läuft so von selbst ab.
+let dayPickedOn = "";
 
 function dayDate(day) {
   const d = new Date();
@@ -1311,10 +1315,23 @@ function dayDate(day) {
   return d;
 }
 
-// Samstag/Sonntag standardmässig Freizeit-Fenster
-function defaultSetFor(day) {
-  const wd = dayDate(day).getDay();
+// Samstag/Sonntag standardmässig Freizeit-Fenster. Nimmt das Datum und nicht den
+// Tages-Offset: so entstehen Datums-Schlüssel, Wochentag und Uhrzeit eines
+// Aufrufers aus derselben Uhr und können nicht über Mitternacht auseinanderfallen.
+function defaultSetFor(d) {
+  const wd = d.getDay();
   return wd === 0 || wd === 6 ? "freizeit" : "arbeit";
+}
+
+// Tag, auf dem die App startet: Ist das letzte Fenster von heute vorbei, gibt es
+// heute nichts mehr zu entscheiden – dann interessiert nur noch morgen. Massgebend
+// ist das Set, das heute gälte, sonst entschiede am Samstag ein Arbeitsfenster über
+// den Starttag. Ohne Fenster kann nichts vorbei sein: es bleibt bei heute.
+function startDay() {
+  const d = new Date();
+  const wins = windowsFor(setChoice[d.toDateString()] || defaultSetFor(d));
+  if (!wins.length) return 0;
+  return d.getHours() + d.getMinutes() / 60 >= Math.max(...wins.map(w => w.to)) ? 1 : 0;
 }
 
 function sliceDay(h, day) {
@@ -1333,8 +1350,16 @@ function sliceDay(h, day) {
 function renderDay(day) {
   currentDay = day;
   // Die Wochentags-Automatik ist nur der Startwert, nicht der Zwangswert.
-  currentSet = setChoice[dayDate(day).toDateString()] || defaultSetFor(day);
+  const d = dayDate(day);
+  currentSet = setChoice[d.toDateString()] || defaultSetFor(d);
   render();
+}
+
+// Tageswahl von Hand: hält bis zum Tageswechsel, auch wenn das letzte Fenster
+// unterdessen vorbei ist. Wer bewusst auf „Heute" tippt, will heute sehen.
+function pickDay(day) {
+  dayPickedOn = dayDate(0).toDateString();
+  renderDay(day);
 }
 
 function renderSet(set) {
@@ -1419,11 +1444,11 @@ async function init() {
   try {
     // Erststart ohne gespeicherten Standort: direkt orten. Sonst Cache nutzen.
     await loadData(!localStorage.getItem("wetterLoc"));
-    document.getElementById("btn-today").onclick = () => renderDay(0);
-    document.getElementById("btn-tomorrow").onclick = () => renderDay(1);
+    document.getElementById("btn-today").onclick = () => pickDay(0);
+    document.getElementById("btn-tomorrow").onclick = () => pickDay(1);
     document.getElementById("btn-arbeit").onclick = () => renderSet("arbeit");
     document.getElementById("btn-freizeit").onclick = () => renderSet("freizeit");
-    renderDay(new Date().getHours() >= 20 ? 1 : 0);
+    renderDay(startDay());
     status.hidden = true;
     document.getElementById("toggles").hidden = false;
     document.getElementById("app").hidden = false;
@@ -1479,8 +1504,13 @@ async function onResume() {
       // weiter, also nicht bloss ignorieren, sondern wegräumen.
       const keep = [dayDate(0).toDateString(), dayDate(1).toDateString()];
       for (const k of Object.keys(setChoice)) if (!keep.includes(k)) delete setChoice[k];
-      renderDay(new Date().getHours() >= 20 ? 1 : 0);
-    } else render();
+    }
+    // Solange der Tag nicht von Hand gewählt wurde, gilt bei jeder Rückkehr wieder
+    // startDay() — auf dem Homescreen ist Hervorholen das Öffnen. Der Tageswechsel
+    // braucht dafür keinen eigenen Zweig: eine gestrige Wahl ist über ihr Datum
+    // ohnehin abgelaufen.
+    if (dayPickedOn !== dayDate(0).toDateString()) renderDay(startDay());
+    else render();
   } finally {
     refreshing = false;
   }
