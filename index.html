@@ -1315,9 +1315,11 @@ function dayDate(day) {
   return d;
 }
 
-// Samstag/Sonntag standardmässig Freizeit-Fenster
-function defaultSetFor(day) {
-  const wd = dayDate(day).getDay();
+// Samstag/Sonntag standardmässig Freizeit-Fenster. Nimmt das Datum und nicht den
+// Tages-Offset: so entstehen Datums-Schlüssel, Wochentag und Uhrzeit eines
+// Aufrufers aus derselben Uhr und können nicht über Mitternacht auseinanderfallen.
+function defaultSetFor(d) {
+  const wd = d.getDay();
   return wd === 0 || wd === 6 ? "freizeit" : "arbeit";
 }
 
@@ -1326,9 +1328,9 @@ function defaultSetFor(day) {
 // ist das Set, das heute gälte, sonst entschiede am Samstag ein Arbeitsfenster über
 // den Starttag. Ohne Fenster kann nichts vorbei sein: es bleibt bei heute.
 function startDay() {
-  const wins = windowsFor(setChoice[dayDate(0).toDateString()] || defaultSetFor(0));
-  if (!wins.length) return 0;
   const d = new Date();
+  const wins = windowsFor(setChoice[d.toDateString()] || defaultSetFor(d));
+  if (!wins.length) return 0;
   return d.getHours() + d.getMinutes() / 60 >= Math.max(...wins.map(w => w.to)) ? 1 : 0;
 }
 
@@ -1348,7 +1350,8 @@ function sliceDay(h, day) {
 function renderDay(day) {
   currentDay = day;
   // Die Wochentags-Automatik ist nur der Startwert, nicht der Zwangswert.
-  currentSet = setChoice[dayDate(day).toDateString()] || defaultSetFor(day);
+  const d = dayDate(day);
+  currentSet = setChoice[d.toDateString()] || defaultSetFor(d);
   render();
 }
 
