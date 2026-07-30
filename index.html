@@ -1033,7 +1033,10 @@ function renderChart(h, now, windows) {
   const yR = v => H - padB - (v / rMax) * (H - padT - padB) * 0.55;
   const tick0 = Math.ceil(t0 / 3) * 3; // erste 3-Stunden-Marke im Bereich
 
-  let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Tagesverlauf gefühlte und tatsächliche Temperatur sowie Regen">';
+  // Vorlesbare Beschreibung: die tatsächliche Temperatur nur ankündigen, wenn sie
+  // auch gezeichnet ist — fehlt die Reihe, gäbe es sonst eine Kurve zu suchen.
+  const tempLabel = aPts.length ? "gefühlte und tatsächliche Temperatur" : "gefühlte Temperatur";
+  let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Tagesverlauf ' + tempLabel + ' sowie Regen">';
 
   // Hilfslinien: alle 3 h / 3 °C, Hauptlinien (alle 6) leicht kräftiger
   for (let hr = tick0; hr <= t1; hr += 3) {
