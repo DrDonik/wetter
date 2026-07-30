@@ -826,7 +826,7 @@ async function loadWeather(pos) {
   const url = "https://api.open-meteo.com/v1/forecast"
     + "?latitude=" + pos.lat.toFixed(4)
     + "&longitude=" + pos.lon.toFixed(4)
-    + "&hourly=apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_direction_10m,is_day"
+    + "&hourly=apparent_temperature,temperature_2m,precipitation_probability,precipitation,weather_code,wind_speed_10m,wind_direction_10m,is_day"
     + "&forecast_days=2&timezone=auto&models=" + model;
   const res = await fetch(url);
   if (!res.ok) throw new Error("API " + res.status);
@@ -1009,15 +1009,19 @@ function renderChart(h, now, windows) {
   // Einzelne Stunden können in der Vorhersage fehlen (null). Solche Punkte werden
   // übersprungen — sonst würde eine Lücke die Achsengrenzen zu NaN machen und den
   // ganzen Chart unbrauchbar, statt nur einen Punkt zu kosten.
-  const tPts = [], hoursR = [];
+  // Die tatsächliche Temperatur läuft als schwache Nebenkurve mit; sie fehlt in
+  // Altbeständen ohne die Reihe und wird dann einfach nicht gezeichnet.
+  const tPts = [], aPts = [], hoursR = [];
   for (let i = t0; i <= Math.min(t1, 23); i++) {
     if (h.apparent_temperature[i] != null) tPts.push([i, h.apparent_temperature[i]]);
+    if (h.temperature_2m?.[i] != null) aPts.push([i, h.temperature_2m[i]]);
   }
   for (let i = t0; i <= Math.min(t1 - 1, 23); i++) hoursR.push(i);
-  const temps = tPts.map(p => p[1]);
+  const temps = tPts.concat(aPts).map(p => p[1]);
   const rain = hoursR.map(i => h.precipitation[i] ?? 0);
   // Achsengrenzen auf Vielfache von 3 gerundet (mit mind. 1° Abstand zur Kurve),
-  // damit die 3°-Hilfslinien immer auf mod-3-Zahlen liegen. Ohne einen einzigen
+  // damit die 3°-Hilfslinien immer auf mod-3-Zahlen liegen. Beide Kurven gehen ein,
+  // sonst liefe die tatsächliche Temperatur aus dem Plotbereich. Ohne einen einzigen
   // Temperaturwert bleibt eine neutrale Skala, damit Regen und Fenster lesbar sind.
   const tMin = temps.length ? Math.floor((Math.min(...temps) - 1) / 3) * 3 : 0;
   const tMax = temps.length ? Math.ceil((Math.max(...temps) + 1) / 3) * 3 : 12;
@@ -1029,7 +1033,10 @@ function renderChart(h, now, windows) {
   const yR = v => H - padB - (v / rMax) * (H - padT - padB) * 0.55;
   const tick0 = Math.ceil(t0 / 3) * 3; // erste 3-Stunden-Marke im Bereich
 
-  let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Tagesverlauf gefühlte Temperatur und Regen">';
+  // Vorlesbare Beschreibung: die tatsächliche Temperatur nur ankündigen, wenn sie
+  // auch gezeichnet ist — fehlt die Reihe, gäbe es sonst eine Kurve zu suchen.
+  const tempLabel = aPts.length ? "gefühlte und tatsächliche Temperatur" : "gefühlte Temperatur";
+  let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Tagesverlauf ' + tempLabel + ' sowie Regen">';
 
   // Hilfslinien: alle 3 h / 3 °C, Hauptlinien (alle 6) leicht kräftiger
   for (let hr = tick0; hr <= t1; hr += 3) {
@@ -1086,10 +1093,14 @@ function renderChart(h, now, windows) {
     s += '<rect x="' + x0 + '" y="' + yR(v) + '" width="' + (x1 - x0) + '" height="' + (H - padB - yR(v)) + '" fill="' + col.rain + '" opacity="0.75" rx="2"/>';
   });
 
-  // Temperaturkurve
+  // Temperaturkurven: die tatsächliche zuerst und nur angedeutet, damit die
+  // gefühlte — die einzige, nach der man sich anzieht — die Hauptlinie bleibt.
+  const tempPath = pts => pts.map(([i, v], k) => (k ? "L" : "M") + x(i).toFixed(1) + " " + yT(v).toFixed(1)).join(" ");
+  if (aPts.length) {
+    s += '<path d="' + tempPath(aPts) + '" fill="none" stroke="' + col.warm + '" stroke-width="1.5" stroke-linecap="round" opacity="0.3"><title>tatsächliche Temperatur</title></path>';
+  }
   if (tPts.length) {
-    const path = tPts.map(([i, v], k) => (k ? "L" : "M") + x(i).toFixed(1) + " " + yT(v).toFixed(1)).join(" ");
-    s += '<path d="' + path + '" fill="none" stroke="' + col.warm + '" stroke-width="2.5" stroke-linecap="round"/>';
+    s += '<path d="' + tempPath(tPts) + '" fill="none" stroke="' + col.warm + '" stroke-width="2.5" stroke-linecap="round"/>';
   }
 
   // Spitzenwert des Regens anschreiben: ohne diese eine Zahl hat die Balkenhöhe
@@ -1338,6 +1349,7 @@ function sliceDay(h, day) {
   const from = day * 24, to = from + 24;
   return {
     apparent_temperature: h.apparent_temperature.slice(from, to),
+    temperature_2m: (h.temperature_2m || []).slice(from, to),
     precipitation_probability: h.precipitation_probability.slice(from, to),
     precipitation: h.precipitation.slice(from, to),
     weather_code: h.weather_code.slice(from, to),
